@@ -16,43 +16,44 @@ export function haversineKm(a: { lat: number; lng: number }, b: { lat: number; l
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
-function pathLength(path: Point[]) {
-  let d = 0;
-  for (let i = 1; i < path.length; i++) d += haversineKm(path[i - 1], path[i]);
-  return d;
-}
-
-/** Nearest-neighbour seed followed by 2-opt improvement (open path, fixed start). */
+/**
+ * Shortest open path through all stops (exact Held-Karp DP; tours are ≤12 stops).
+ * If startKey is given the path begins there, otherwise the best start is chosen.
+ */
 export function orderStops(points: Point[], startKey?: string): Point[] {
-  if (points.length <= 2) return points;
-  const remaining = [...points];
-  const startIdx = Math.max(
-    0,
-    remaining.findIndex((p) => p.key === startKey),
-  );
-  const path = [remaining.splice(startIdx, 1)[0]];
-  while (remaining.length) {
-    const last = path[path.length - 1];
-    let best = 0;
-    for (let i = 1; i < remaining.length; i++) {
-      if (haversineKm(last, remaining[i]) < haversineKm(last, remaining[best])) best = i;
-    }
-    path.push(remaining.splice(best, 1)[0]);
-  }
-  let improved = true;
-  while (improved) {
-    improved = false;
-    for (let i = 1; i < path.length - 1; i++) {
-      for (let k = i + 1; k < path.length; k++) {
-        const candidate = [...path.slice(0, i), ...path.slice(i, k + 1).reverse(), ...path.slice(k + 1)];
-        if (pathLength(candidate) + 1e-6 < pathLength(path)) {
-          path.splice(0, path.length, ...candidate);
-          improved = true;
+  const n = points.length;
+  if (n <= 2) return points;
+  const dist = points.map((a) => points.map((b) => haversineKm(a, b)));
+  const full = (1 << n) - 1;
+  const cost = new Float64Array((1 << n) * n).fill(Infinity);
+  const parent = new Int8Array((1 << n) * n).fill(-1);
+  const fixed = points.findIndex((p) => p.key === startKey);
+  for (let i = 0; i < n; i++) if (fixed < 0 || i === fixed) cost[(1 << i) * n + i] = 0;
+  for (let mask = 1; mask <= full; mask++) {
+    for (let last = 0; last < n; last++) {
+      const c = cost[mask * n + last];
+      if (!(mask & (1 << last)) || c === Infinity) continue;
+      for (let next = 0; next < n; next++) {
+        if (mask & (1 << next)) continue;
+        const m2 = mask | (1 << next);
+        const c2 = c + dist[last][next];
+        if (c2 < cost[m2 * n + next]) {
+          cost[m2 * n + next] = c2;
+          parent[m2 * n + next] = last;
         }
       }
     }
   }
-  return path;
+  let last = 0;
+  for (let i = 1; i < n; i++) if (cost[full * n + i] < cost[full * n + last]) last = i;
+  const order: number[] = [];
+  for (let mask = full; last >= 0; ) {
+    order.push(last);
+    const prev = parent[mask * n + last];
+    mask &= ~(1 << last);
+    last = prev;
+  }
+  return order.reverse().map((i) => points[i]);
 }
 
 export interface Leg {

@@ -96,7 +96,26 @@ body {
   animation: pulse-dot 1.2s ease-in-out infinite;
 }
 
+.print-only {
+  display: none;
+}
+
 @media print {
+  :root {
+    --color-ink: #ffffff;
+    --color-panel: #ffffff;
+    --color-panel-2: #f4f4f6;
+    --color-line: #d4d4dc;
+    --color-text: #111118;
+    --color-muted: #55556a;
+    --color-amber: #b86e00;
+  }
+  .print-only {
+    display: block;
+  }
+  .ticket {
+    break-inside: avoid;
+  }
   .no-print {
     display: none !important;
   }

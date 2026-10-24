@@ -23,10 +23,11 @@ export function AgentFeed({
   canChat: boolean;
 }) {
   const [draft, setDraft] = useState("");
-  const endRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [feed.length]);
+    const el = listRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [feed.length, running]);
 
   const send = (q: string) => {
     if (!q.trim() || running) return;
@@ -36,7 +37,7 @@ export function AgentFeed({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="scroll-thin flex-1 space-y-2 overflow-y-auto pr-1" aria-live="polite">
+      <div ref={listRef} className="scroll-thin min-h-0 flex-1 space-y-2 overflow-y-auto pr-1" aria-live="polite">
         {feed.map((it, i) => {
           if (it.kind === "tool")
             return (
@@ -86,7 +87,6 @@ export function AgentFeed({
             <span className="pulse-dot inline-block h-2 w-2 rounded-full bg-amber" /> Roadie is working…
           </div>
         )}
-        <div ref={endRef} />
       </div>
 
       {canChat && (

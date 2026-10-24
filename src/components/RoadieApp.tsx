@@ -63,7 +63,7 @@ export default function RoadieApp() {
   const calls = r.calls.length;
 
   return (
-    <div className="flex min-h-screen flex-col lg:h-screen">
+    <div className="flex min-h-screen flex-col overflow-x-hidden lg:h-screen">
       <header className="no-print flex flex-wrap items-center gap-3 border-b border-line px-4 py-2.5">
         <button onClick={r.reset} className="flex items-center gap-2 text-muted hover:text-text" aria-label="New tour">
           <ArrowLeft size={16} />
@@ -92,13 +92,13 @@ export default function RoadieApp() {
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[400px_1fr]">
-        <aside className="no-print flex min-h-[50vh] flex-col border-line p-4 lg:min-h-0 lg:border-r">
+      <div className="no-print grid min-h-0 flex-1 lg:grid-cols-[400px_1fr]">
+        <aside className="no-print order-2 flex h-[70vh] min-w-0 flex-col border-t border-line p-4 lg:order-1 lg:h-auto lg:min-h-0 lg:border-r lg:border-t-0">
           <h2 className="mb-3 text-xs uppercase tracking-widest text-muted">Agent activity</h2>
           <AgentFeed feed={r.feed} running={r.running} onAsk={r.ask} canChat={!r.running || r.feed.length > 0} />
         </aside>
 
-        <main className="flex min-h-0 flex-col">
+        <main className="order-1 flex min-h-0 min-w-0 flex-col lg:order-2">
           <div className="no-print h-[300px] shrink-0 border-b border-line lg:h-[42%]">
             <TourMap board={r.board} focusCity={focus} />
           </div>
@@ -126,6 +126,14 @@ export default function RoadieApp() {
             {tab === "Receipts" && <Receipts calls={r.calls} />}
           </div>
         </main>
+      </div>
+
+      <div className="print-only space-y-6 p-6">
+        <h1 className="font-display text-3xl uppercase">{r.brief.actName}: tour sheet</h1>
+        <Itinerary board={r.board} onFocus={() => {}} />
+        <Partners board={r.board} />
+        <Audience board={r.board} />
+        <p className="text-xs">Planned with Roadie using Qloo taste data. Affinity reflects aggregate audience taste, not ticket demand.</p>
       </div>
     </div>
   );

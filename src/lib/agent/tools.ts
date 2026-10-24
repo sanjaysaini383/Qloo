@@ -445,7 +445,7 @@ const findOpeners: RoadieTool = {
             `Shared taste: act vs ${o.name}`,
           )
           .catch(() => null);
-        const overlap = tagsFrom(cmp).map((t) => t.name).slice(0, 6);
+        const overlap = [...new Set(tagsFrom(cmp).map((t) => t.name))].slice(0, 6);
         openers[i] = { ...o, ...(overlap.length ? { overlap } : {}) } as typeof o;
       }),
     );
@@ -504,7 +504,7 @@ const planRoute: RoadieTool = {
   },
   label: (a) => `Routing ${Array.isArray(a.cities) ? a.cities.length : 0} stops`,
   async run(ctx, args) {
-    const names = (Array.isArray(args.cities) ? args.cities : []).map(String);
+    const names = (Array.isArray(args.cities) ? args.cities : []).map(String).slice(0, 12);
     const picked = names.flatMap((n) => {
       const mk = findMarket(n);
       return mk ? [mk] : [];

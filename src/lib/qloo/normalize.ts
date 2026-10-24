@@ -48,7 +48,10 @@ export function normalizeEntity(raw: any): Entity {
           name: String(t.name ?? ""),
           type: String(t.type ?? t.subtype ?? ""),
         }))
-        .filter((t: { id: string; name: string }) => t.id && t.name)
+        .filter(
+          (t: { id: string; name: string }, i: number, all: { name: string }[]) =>
+            t.id && t.name && all.findIndex((x) => x.name === t.name) === i,
+        )
     : [];
   const explainRaw = raw?.query?.explainability?.["signal.interests.entities"];
   const explain = Array.isArray(explainRaw)
