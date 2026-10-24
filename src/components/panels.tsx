@@ -31,10 +31,12 @@ export function Itinerary({
   board,
   focus,
   onFocus,
+  onAsk,
 }: {
   board: Board;
   focus?: string;
   onFocus: (city?: string) => void;
+  onAsk?: (q: string) => void;
 }) {
   if (!board.stops.length) {
     const scanned = board.markets.length;
@@ -54,13 +56,35 @@ export function Itinerary({
         </div>
       )}
       {board.stops.map((s) => (
-        <StopCard key={s.city} s={s} maxAff={maxAff} active={focus === s.city} onClick={() => onFocus(focus === s.city ? undefined : s.city)} board={board} />
+        <StopCard
+          key={s.city}
+          s={s}
+          maxAff={maxAff}
+          active={focus === s.city}
+          onClick={() => onFocus(focus === s.city ? undefined : s.city)}
+          board={board}
+          onAsk={onAsk}
+        />
       ))}
     </div>
   );
 }
 
-function StopCard({ s, maxAff, active, onClick, board }: { s: Stop; maxAff: number; active: boolean; onClick: () => void; board: Board }) {
+function StopCard({
+  s,
+  maxAff,
+  active,
+  onClick,
+  board,
+  onAsk,
+}: {
+  s: Stop;
+  maxAff: number;
+  active: boolean;
+  onClick: () => void;
+  board: Board;
+  onAsk?: (q: string) => void;
+}) {
   const scout = board.scouts[s.city];
   const date = new Date(`${s.date}T12:00:00Z`);
   return (
@@ -140,6 +164,25 @@ function StopCard({ s, maxAff, active, onClick, board }: { s: Stop; maxAff: numb
             <MapPin size={12} className="mr-1 inline" />
             Map shows {scout.hotspots.length} fan hotspots (amber), venues (teal) and local spots (white) in {s.city}.
           </p>
+          {onAsk && (
+            <div className="no-print flex flex-wrap gap-2 sm:col-span-2">
+              {[
+                s.venue && `Draft a booking pitch email to ${s.venue.name} for the ${s.city} show on ${s.date}`,
+                `Find a different venue in ${s.city} and update the plan`,
+                `Write a ${s.city}-specific Instagram post for this show`,
+              ]
+                .filter((q): q is string => !!q)
+                .map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => onAsk(q)}
+                    className="rounded-full border border-amber/40 px-3 py-1 text-xs text-amber hover:bg-amber/10"
+                  >
+                    {q.split(" ").slice(0, 4).join(" ")}…
+                  </button>
+                ))}
+            </div>
+          )}
         </div>
       )}
     </article>
@@ -276,7 +319,7 @@ export function MarketScan({ board, onFocus }: { board: Board; onFocus: (city: s
   return (
     <div>
       <p className="mb-3 text-xs text-muted">
-        Affinity of your taste signal among each city&apos;s audience (Qloo location-aware insights). Highlighted cities made the tour.
+        Scored by {board.markets[0].evidence.replace(/ \(\d+ results\)$/, "")} (Qloo Insights). Highlighted cities made the tour.
       </p>
       <ul className="space-y-1.5">
         {board.markets.map((m, i) => (

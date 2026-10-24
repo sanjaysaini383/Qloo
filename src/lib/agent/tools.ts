@@ -209,7 +209,11 @@ const scoreMarkets: RoadieTool = {
       : marketsFor(region);
 
     const type = ctx.board.act!.qlooType;
-    const scored = await Promise.all(
+    const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+
+    // Primary signal: affinity of the act's own entities among each city's audience.
+    let method = "location-aware affinity of the act's signal entities";
+    let scored = await Promise.all(
       candidates.map(async (mk) => {
         try {
           const data = await ctx.session.get(
@@ -223,14 +227,32 @@ const scoreMarkets: RoadieTool = {
             `Fan affinity in ${mk.city}`,
           );
           const ents = entitiesFrom(data);
-          const vals = ents.map((e) => e.affinity ?? e.popularity ?? 0);
-          const affinity = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-          return { mk, affinity, matched: ents.length };
+          return { mk, affinity: mean(ents.map((e) => e.affinity ?? e.popularity ?? 0)), matched: ents.length };
         } catch {
           return { mk, affinity: 0, matched: 0 };
         }
       }),
     );
+
+    // If the location signal doesn't separate cities, fall back to how strongly each
+    // city's own places match the fanbase's taste (also a Qloo affinity score).
+    const vals = scored.map((s) => s.affinity);
+    if (candidates.length > 2 && Math.max(...vals) - Math.min(...vals) < 0.005) {
+      method = "taste match of each city's places to the fanbase";
+      scored = await Promise.all(
+        candidates.map(async (mk) => {
+          const data = await ctx.session
+            .get(
+              "/v2/insights",
+              { "filter.type": "urn:entity:place", "filter.location.query": mk.city, "signal.interests.entities": ids.join(","), take: 10 },
+              `Taste match of ${mk.city}'s places`,
+            )
+            .catch(() => null);
+          const ents = entitiesFrom(data);
+          return { mk, affinity: mean(ents.map((e) => e.affinity ?? 0)), matched: ents.length };
+        }),
+      );
+    }
 
     const sorted = [...scored].sort((a, b) => b.affinity - a.affinity);
     const n = sorted.length;
@@ -241,7 +263,7 @@ const scoreMarkets: RoadieTool = {
       lng: s.mk.lng,
       affinity: s.affinity,
       index: n > 1 ? 1 - i / (n - 1) : 1,
-      evidence: `${s.matched}/${ids.length} signal entities scored in ${s.mk.city}`,
+      evidence: `${method} (${s.matched} results)`,
     }));
 
     // Merge with earlier scores so follow-up scans accumulate.
@@ -274,6 +296,7 @@ const scoreMarkets: RoadieTool = {
             .join(", ")}`
         : "No markets scored",
       data: {
+        method,
         ranked: results.map((r) => ({ city: r.city, country: r.country, fan_affinity: round(r.affinity) })),
         wildcard_destinations: ctx.board.wildcards.map((w) => w.name),
         ...(unknown.length ? { unsupported_cities: unknown } : {}),

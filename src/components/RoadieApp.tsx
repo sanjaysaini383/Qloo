@@ -119,7 +119,7 @@ export default function RoadieApp() {
             ))}
           </nav>
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-4">
-            {tab === "Tour" && <Itinerary board={r.board} focus={focus} onFocus={focusCity} />}
+            {tab === "Tour" && <Itinerary board={r.board} focus={focus} onFocus={focusCity} onAsk={r.running ? undefined : r.ask} />}
             {tab === "Audience" && <Audience board={r.board} />}
             {tab === "Partners" && <Partners board={r.board} />}
             {tab === "Market scan" && <MarketScan board={r.board} onFocus={focusCity} />}

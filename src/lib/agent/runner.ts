@@ -8,7 +8,7 @@ import { TOOLS, toolByName, type ToolContext } from "./tools";
 type Emit = (e: AgentEvent) => void;
 
 export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
-const MAX_TURNS = 16;
+const MAX_TURNS = 24;
 
 const SYSTEM = `You are Roadie, an AI tour manager for independent acts (musicians, comedians, live podcasts) who can't afford a booking agent or a marketing team.
 
