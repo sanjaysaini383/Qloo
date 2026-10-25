@@ -408,7 +408,9 @@ const scoreMarkets: RoadieTool = {
           "Destinations the fanbase over-indexes on",
         )
         .catch(() => null);
-      ctx.board.wildcards = entitiesFrom(dest).slice(0, 8);
+      ctx.board.wildcards = entitiesFrom(dest)
+        .filter((e, i, all) => all.findIndex((x) => x.name === e.name) === i)
+        .slice(0, 8);
     }
 
     return {
@@ -510,7 +512,9 @@ const scoutCity: RoadieTool = {
       venues = entitiesFrom(fallback);
     }
     const venueIds = new Set(venues.map((v) => v.id));
-    let hangouts = entitiesFrom(hangoutsRaw).filter((h) => !venueIds.has(h.id));
+    // A place literally named after the city reads like an error on screen, so skip it.
+    const usable = (h: Entity) => !venueIds.has(h.id) && h.name.trim().toLowerCase() !== city.toLowerCase();
+    let hangouts = entitiesFrom(hangoutsRaw).filter(usable);
     if (hangouts.length < 3) {
       // Thin coverage for cafés/record stores here: widen to any taste-matched place.
       const wider = await ctx.session
@@ -521,7 +525,7 @@ const scoutCity: RoadieTool = {
         )
         .catch(() => null);
       const seen = new Set([...venueIds, ...hangouts.map((h) => h.id)]);
-      hangouts = [...hangouts, ...entitiesFrom(wider).filter((h) => !seen.has(h.id))].slice(0, 8);
+      hangouts = [...hangouts, ...entitiesFrom(wider).filter((h) => usable(h) && !seen.has(h.id))].slice(0, 8);
     }
     const hotspots = Array.isArray(hoods) ? hoods : [];
     ctx.board.scouts[city] = { city, hotspots, venues, hangouts };
