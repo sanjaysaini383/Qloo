@@ -211,32 +211,65 @@ async function autopilot(ctx: ToolContext, emit: Emit) {
   await Promise.all([call("find_openers"), call("find_partners")]);
   await call("plan_route", { cities: picks.map((p) => p.city), start_city: home?.city });
 
-  const tags = ctx.board.audience?.tasteTags ?? [];
-  const brands = ctx.board.brands;
+  const board = ctx.board;
+  const themes = (board.audience?.tasteTags ?? []).filter((t) => t.group !== "Sound");
+  const sound = (board.audience?.tasteTags ?? []).filter((t) => t.group === "Sound");
+  const brands = board.brands;
+  const pick = <T,>(xs: T[], i: number) => (xs.length ? xs[i % xs.length] : undefined);
+  // Spread the strongest openers across the run, each playing consecutive dates.
+  const openerPool = board.openers.slice(0, Math.min(3, board.openers.length));
+  const perOpener = Math.max(1, Math.ceil(board.stops.length / Math.max(1, openerPool.length)));
+
   await call("finalize_plan", {
-    headline: `${b.actName}: The Taste Map Tour`,
-    summary: `${picks.length} cities ranked by Qloo fan affinity, routed to minimise travel. Venues and local spots are matched to the same fanbase.`,
-    stops: ctx.board.stops.map((s, i) => ({
-      city: s.city,
-      venue_id: s.venue?.id,
-      local_spot_id: s.hangout?.id,
-      opener_id: ctx.board.openers[i % Math.max(1, Math.min(3, ctx.board.openers.length))]?.id,
-      angle: [
-        tags[i % Math.max(1, tags.length)] ? `Lead with the ${tags[i % tags.length].name} crowd` : "Lead with the core fanbase",
-        s.hangout ? `host a pre-show meet-up at ${s.hangout.name}` : "",
-        brands[i % Math.max(1, brands.length)] ? `co-promote with ${brands[i % brands.length].name}` : "",
-      ]
-        .filter(Boolean)
-        .join("; ") + ".",
-    })),
+    headline: `${b.actName}: ${board.stops[0]?.city ?? "On"} to ${board.stops[board.stops.length - 1]?.city ?? "the Road"}`,
+    summary: [
+      `${board.stops.length} shows in the cities where Qloo finds the strongest local affinity for ${b.actName}'s audience, routed to the shortest drive.`,
+      sound.length ? `The sound fans gravitate to: ${sound.slice(0, 3).map((t) => t.name).join(", ")}.` : "",
+      themes.length ? `Lead creative with ${themes.slice(0, 2).map((t) => t.name.toLowerCase()).join(" and ")}, the themes this audience over-indexes on.` : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    stops: board.stops.map((s, i) => {
+      const hoods = (board.scouts[s.city]?.hotspots ?? []).slice(0, 2).map((h) => h.name).filter(Boolean);
+      const brand = pick(brands, i);
+      const theme = pick(themes, i);
+      return {
+        city: s.city,
+        venue_id: s.venue?.id,
+        local_spot_id: s.hangout?.id,
+        opener_id: openerPool[Math.floor(i / perOpener) % Math.max(1, openerPool.length)]?.id,
+        angle:
+          [
+            hoods.length ? `Poster and street-team ${hoods.join(" and ")}, where fans cluster` : "",
+            s.hangout ? `pre-show meet-up at ${s.hangout.name}` : "",
+            theme ? `creative leans on "${theme.name}"` : "",
+            brand ? `pitch ${brand.name} for a local co-promo` : "",
+          ]
+            .filter(Boolean)
+            .join("; ") + ".",
+      };
+    }),
     brand_ids: brands.slice(0, 3).map((x) => x.id),
-    podcast_ids: ctx.board.podcasts.slice(0, 3).map((x) => x.id),
+    podcast_ids: board.podcasts.slice(0, 3).map((x) => x.id),
   });
-  const lines = ctx.board.stops.map(
-    (s) => `- **${s.city}** (${s.date}): fan affinity ${(s.affinity * 100).toFixed(0)}${s.venue ? ` · ${s.venue.name}` : ""}`,
+  const lines = board.stops.map(
+    (s) =>
+      `- **${s.city}** (${s.date}): fan index ${Math.round(s.affinity * 100)}${s.venue ? ` · ${s.venue.name}` : ""}${
+        s.opener ? ` · with ${s.opener.name}` : ""
+      }`,
   );
+  const extras = [
+    board.brands.length ? `**Brands to pitch:** ${board.brands.slice(0, 3).map((x) => x.name).join(", ")}` : "",
+    board.podcasts.length ? `**Podcasts for pre-tour press:** ${board.podcasts.slice(0, 3).map((x) => x.name).join(", ")}` : "",
+  ].filter(Boolean);
   emit({
     type: "message",
-    text: `**${ctx.board.headline}**\n\n${ctx.board.summary}\n\n${lines.join("\n")}\n\n_Limits: Qloo measures aggregate taste affinity, not ticket demand or venue availability. Confirm holds with each venue._`,
+    text: [
+      `**${board.headline}**`,
+      board.summary,
+      lines.join("\n"),
+      ...extras,
+      "_Limits: Qloo measures aggregate taste affinity, not ticket demand or venue availability. Confirm holds with each venue._",
+    ].join("\n\n"),
   });
 }

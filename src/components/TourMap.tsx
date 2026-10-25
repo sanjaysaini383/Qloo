@@ -1,23 +1,20 @@
 "use client";
 import { useEffect, useMemo } from "react";
 import L from "leaflet";
-import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
+import { CircleMarker, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
 import type { Board } from "@/lib/types";
 
 const pin = (n: number) =>
   L.divIcon({ className: "", html: `<div class="stop-pin">${n}</div>`, iconSize: [28, 28], iconAnchor: [14, 14] });
 
-function Fit({ points, focus }: { points: [number, number][]; focus?: [number, number] }) {
+function Fit({ points, maxZoom }: { points: [number, number][]; maxZoom: number }) {
   const map = useMap();
   const key = JSON.stringify(points);
   useEffect(() => {
-    if (focus) {
-      map.flyTo(focus, 11, { duration: 0.8 });
-    } else if (points.length) {
-      map.fitBounds(L.latLngBounds(points).pad(0.25), { animate: true, maxZoom: 6 });
-    }
+    if (points.length === 1) map.flyTo(points[0], Math.min(maxZoom, 11), { duration: 0.8 });
+    else if (points.length) map.flyToBounds(L.latLngBounds(points).pad(0.2), { duration: 0.8, maxZoom });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, focus?.[0], focus?.[1], map]);
+  }, [key, maxZoom, map]);
   return null;
 }
 
@@ -27,6 +24,12 @@ export default function TourMap({ board, focusCity }: { board: Board; focusCity?
   const marketPts = board.markets.map((m) => [m.lat, m.lng] as [number, number]);
   const scout = focusCity ? board.scouts[focusCity] : undefined;
   const focusStop = stops.find((s) => s.city === focusCity) ?? board.markets.find((m) => m.city === focusCity);
+  const focusPts: [number, number][] = scout
+    ? [
+        ...scout.hotspots.slice(0, 6).map((h) => [h.lat, h.lng] as [number, number]),
+        ...scout.venues.filter((v) => v.lat !== undefined && v.lng !== undefined).map((v) => [v.lat!, v.lng!] as [number, number]),
+      ]
+    : [];
   const maxAff = useMemo(() => Math.max(0.0001, ...board.markets.map((m) => m.affinity)), [board.markets]);
 
   return (
@@ -47,7 +50,18 @@ export default function TourMap({ board, focusCity }: { board: Board; focusCity?
         url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
         maxZoom={16}
       />
-      <Fit points={route.length ? route : marketPts} focus={focusStop ? [focusStop.lat, focusStop.lng] : undefined} />
+      <Fit
+        points={
+          focusPts.length
+            ? focusPts
+            : focusStop
+              ? [[focusStop.lat, focusStop.lng]]
+              : route.length
+                ? route
+                : marketPts
+        }
+        maxZoom={focusPts.length || focusStop ? 13 : 6}
+      />
 
       {board.markets.map((m) => (
         <CircleMarker
@@ -82,16 +96,23 @@ export default function TourMap({ board, focusCity }: { board: Board; focusCity?
         </Marker>
       ))}
 
-      {scout?.hotspots.map((h, i) => (
-        <CircleMarker
-          key={`h${i}`}
-          center={[h.lat, h.lng]}
-          radius={6 + 10 * h.affinity}
-          pathOptions={{ color: "#ffb547", weight: 0, fillColor: "#ffb547", fillOpacity: 0.15 + 0.5 * h.affinity }}
-        >
-          <Tooltip>Fan hotspot · affinity {(h.affinity * 100).toFixed(0)}</Tooltip>
-        </CircleMarker>
-      ))}
+      {scout?.hotspots.map((h, i) => {
+        const style = { color: "#ffb547", weight: 1, fillColor: "#ffb547", fillOpacity: 0.08 + 0.4 * h.affinity };
+        const tip = (
+          <Tooltip sticky>
+            {h.name ?? "Fan hotspot"} · fan affinity {(h.affinity * 100).toFixed(0)}
+          </Tooltip>
+        );
+        return h.polygon && h.polygon.length > 2 ? (
+          <Polygon key={`h${i}`} positions={h.polygon} pathOptions={style}>
+            {tip}
+          </Polygon>
+        ) : (
+          <CircleMarker key={`h${i}`} center={[h.lat, h.lng]} radius={8 + 10 * h.affinity} pathOptions={{ ...style, weight: 0 }}>
+            {tip}
+          </CircleMarker>
+        );
+      })}
       {[...(scout?.venues ?? []), ...(scout?.hangouts ?? [])]
         .filter((v) => v.lat !== undefined && v.lng !== undefined)
         .map((v) => {

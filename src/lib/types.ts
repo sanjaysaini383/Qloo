@@ -20,8 +20,12 @@ export interface MarketScore {
   country: string;
   lat: number;
   lng: number;
-  /** Mean Qloo affinity of the act's signal set among this city's audience (0–1). */
+  /** Fan index (0–1): per-entity Qloo location affinity, rescaled across candidate cities. */
   affinity: number;
+  /** Mean raw Qloo affinity of the signal entities present in this city. */
+  raw?: number;
+  /** Raw Qloo affinity per signal entity id in this city (absent = no local resonance). */
+  perEntity?: Record<string, number>;
   /** Rank-normalised version of affinity across the candidate list (0–1). */
   index: number;
   evidence: string;
@@ -53,7 +57,7 @@ export interface Stop {
 export interface AudienceProfile {
   age: Record<string, number>;
   gender: Record<string, number>;
-  tasteTags: { id: string; name: string; type: string }[];
+  tasteTags: { id: string; name: string; type: string; group?: string }[];
 }
 
 export interface Opener extends Entity {

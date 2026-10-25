@@ -118,6 +118,26 @@ export async function mockQloo(path: string, p: Record<string, string>): Promise
     case "urn:heatmap": {
       const mk = findMarket(p["filter.location.query"] ?? "");
       if (!mk) return { results: { heatmap: [] } };
+      if (p["output.heatmap.boundary"] === "urn:entity:locality") {
+        const hoods = ["Old Town", "Riverside", "Arts District", "Northside", "Mill Quarter", "Harbor Point", "Eastgate", "Westbrook"];
+        return {
+          results: {
+            entities: hoods.map((n, i) => {
+              const s = `${signal}:${mk.city}:${n}`;
+              const lat = mk.lat + (rand(s, 1) - 0.5) * 0.12;
+              const lng = mk.lng + (rand(s, 2) - 0.5) * 0.14;
+              const d = 0.008;
+              return {
+                name: n,
+                entity_id: id(s),
+                popularity: rand(s, 3),
+                query: { affinity: 1 - i / hoods.length },
+                boundary: `POLYGON ((${lng - d} ${lat - d}, ${lng + d} ${lat - d}, ${lng + d} ${lat + d}, ${lng - d} ${lat + d}, ${lng - d} ${lat - d}))`,
+              };
+            }),
+          },
+        };
+      }
       return {
         results: {
           heatmap: Array.from({ length: 40 }, (_, i) => {

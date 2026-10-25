@@ -92,7 +92,7 @@ export class QlooSession {
 
   constructor(
     private onCall?: (call: QlooCallRecord) => void,
-    private maxConcurrent = 6,
+    private maxConcurrent = 8,
   ) {}
 
   private async slot<T>(fn: () => Promise<T>): Promise<T> {
@@ -108,10 +108,19 @@ export class QlooSession {
     }
   }
 
-  async get<T = unknown>(path: string, params: QlooParams, purpose: string): Promise<T> {
+  /**
+   * GET a Qloo endpoint. `slim` reduces very large responses (e.g. neighbourhood
+   * heatmaps with polygons) before they are cached and returned.
+   */
+  async get<T = unknown>(
+    path: string,
+    params: QlooParams,
+    purpose: string,
+    slim?: { id: string; fn: (data: unknown) => unknown },
+  ): Promise<T> {
     const clean = cleanParams(params);
     const qs = new URLSearchParams(clean).toString();
-    const key = `${path}?${qs}`;
+    const key = `${path}?${qs}${slim ? `#${slim.id}` : ""}`;
     const started = Date.now();
     const record: QlooCallRecord = {
       id: ++this.seq,
@@ -126,7 +135,7 @@ export class QlooSession {
 
     const finish = (data: unknown) => {
       record.ms = Date.now() - started;
-      record.count = countResults(data);
+      if (!record.count) record.count = Array.isArray(data) ? data.length : countResults(data);
       this.calls.push(record);
       this.onCall?.(record);
       return data as T;
@@ -139,9 +148,9 @@ export class QlooSession {
     }
 
     try {
-      const data = await this.slot(() =>
-        isMockMode() ? mockQloo(path, clean) : fetchWithRetry(path, qs),
-      );
+      const raw = await this.slot(() => (isMockMode() ? mockQloo(path, clean) : fetchWithRetry(path, qs)));
+      record.count = countResults(raw);
+      const data = slim ? slim.fn(raw) : raw;
       cacheSet(key, data);
       return finish(data);
     } catch (err) {
@@ -155,12 +164,38 @@ export class QlooSession {
   }
 }
 
+/**
+ * The hackathon key allows 10 requests per second. Every request in this
+ * process waits for a slot in a rolling one-second window (kept at 8 for headroom).
+ */
+const PER_SECOND = Number(process.env.QLOO_RPS ?? 8);
+const recentStarts: number[] = [];
+let gate: Promise<void> = Promise.resolve();
+
+function rateGate(): Promise<void> {
+  const next = gate.then(async () => {
+    for (;;) {
+      const now = Date.now();
+      while (recentStarts.length && now - recentStarts[0] >= 1000) recentStarts.shift();
+      if (recentStarts.length < PER_SECOND) {
+        recentStarts.push(now);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 1000 - (now - recentStarts[0]) + 5));
+    }
+  });
+  gate = next.catch(() => {});
+  return next;
+}
+
 async function fetchWithRetry(path: string, qs: string): Promise<unknown> {
   const url = `${QLOO_BASE_URL}${path}?${qs}`;
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await rateGate();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20_000);
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    let waitMs = 500 * 2 ** attempt;
     try {
       const res = await fetch(url, {
         headers: { "X-Api-Key": process.env.QLOO_API_KEY!, accept: "application/json" },
@@ -171,6 +206,10 @@ async function fetchWithRetry(path: string, qs: string): Promise<unknown> {
       const body = await res.text().catch(() => "");
       const err = new QlooError(`Qloo ${res.status}: ${body.slice(0, 300)}`, res.status);
       if (res.status !== 429 && res.status < 500) throw err;
+      if (res.status === 429) {
+        const reset = Number(res.headers.get("x-second-ratelimit-reset"));
+        waitMs = Math.max(waitMs, (Number.isFinite(reset) && reset > 0 ? reset : 1) * 1000 + Math.random() * 300);
+      }
       lastErr = err;
     } catch (err) {
       if (err instanceof QlooError && err.status !== 429 && err.status < 500) throw err;
@@ -178,7 +217,7 @@ async function fetchWithRetry(path: string, qs: string): Promise<unknown> {
     } finally {
       clearTimeout(timer);
     }
-    await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
+    await new Promise((r) => setTimeout(r, waitMs));
   }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }

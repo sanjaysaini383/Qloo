@@ -70,6 +70,10 @@ export default function RoadieApp() {
           <Logo />
         </button>
         <span className="hidden text-sm text-muted sm:inline">/</span>
+        {r.board.act?.found?.image && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={r.board.act.found.image} alt="" className="h-7 w-7 rounded-full object-cover" />
+        )}
         <span className="truncate text-sm font-medium">{r.brief.actName}</span>
         <div className="ml-auto flex flex-wrap items-center gap-2 text-xs">
           {mock !== undefined && (

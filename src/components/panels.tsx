@@ -1,5 +1,6 @@
 "use client";
 import { Car, Coffee, MapPin, Plane, Ticket, Users } from "lucide-react";
+/* eslint-disable @next/next/no-img-element -- Qloo images are remote and already sized */
 import type { Board, Entity, QlooCallView, Stop } from "@/lib/types";
 
 const pct = (n?: number) => (n === undefined ? "–" : `${Math.round(n * 100)}`);
@@ -111,9 +112,21 @@ function StopCard({
             </span>
           </div>
           <div className="mt-1.5 flex items-center gap-2">
-            <span className="w-28 shrink-0 text-xs text-muted">Fan affinity {pct(s.affinity)}</span>
+            <span className="w-24 shrink-0 text-xs text-muted">Fan index {pct(s.affinity)}</span>
             <Meter value={s.affinity} max={maxAff} />
           </div>
+          {scout && scout.hotspots.length > 0 && (
+            <p className="mt-1.5 truncate text-xs text-muted">
+              <MapPin size={11} className="mr-1 inline text-amber" />
+              Fans cluster in{" "}
+              <span className="text-text/90">
+                {scout.hotspots
+                  .slice(0, 4)
+                  .map((h) => h.name)
+                  .join(" · ")}
+              </span>
+            </p>
+          )}
           {s.angle && <p className="mt-2 text-sm text-text/85">{s.angle}</p>}
           <div className="mt-2 grid gap-2 sm:grid-cols-3">
             {s.venue && (
@@ -162,7 +175,7 @@ function StopCard({
           </div>
           <p className="text-xs text-muted sm:col-span-2">
             <MapPin size={12} className="mr-1 inline" />
-            Map shows {scout.hotspots.length} fan hotspots (amber), venues (teal) and local spots (white) in {s.city}.
+            Map shows the {scout.hotspots.length} neighbourhoods where fans over-index (amber), venues (teal) and local spots (white) in {s.city}.
           </p>
           {onAsk && (
             <div className="no-print flex flex-wrap gap-2 sm:col-span-2">
@@ -228,9 +241,18 @@ export function Audience({ board }: { board: Board }) {
         <section>
           <h4 className="mb-2 text-xs uppercase tracking-widest text-muted">Taste signal</h4>
           <div className="flex flex-wrap gap-2">
-            {act.found && <span className="rounded-full bg-amber px-3 py-1 text-xs font-semibold text-ink">{act.found.name}</span>}
-            {act.references.map((r) => (
-              <span key={r.id} className="rounded-full border border-amber/50 px-3 py-1 text-xs text-amber">
+            {[...(act.found ? [act.found] : []), ...act.references].map((r) => (
+              <span
+                key={r.id}
+                className={`flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-xs ${
+                  r.id === act.found?.id ? "bg-amber font-semibold text-ink" : "border border-amber/50 text-amber"
+                }`}
+              >
+                {r.image ? (
+                  <img src={r.image} alt="" className="h-6 w-6 rounded-full object-cover" loading="lazy" />
+                ) : (
+                  <span className="h-6 w-6 rounded-full bg-ink/30" />
+                )}
                 {r.name}
               </span>
             ))}
@@ -255,11 +277,18 @@ export function Audience({ board }: { board: Board }) {
       {a && a.tasteTags.length > 0 && (
         <section>
           <h4 className="mb-2 text-xs uppercase tracking-widest text-muted">Fan taste DNA (cross-domain)</h4>
-          <div className="flex flex-wrap gap-1.5">
-            {a.tasteTags.map((t) => (
-              <span key={t.id} className="rounded-md bg-panel-2 px-2 py-1 text-xs" title={t.type}>
-                {t.name}
-              </span>
+          <div className="space-y-2.5">
+            {[...new Set(a.tasteTags.map((t) => t.group ?? "Taste"))].map((g) => (
+              <div key={g} className="flex flex-wrap items-center gap-1.5">
+                <span className="w-32 shrink-0 text-xs text-amber">{g}</span>
+                {a.tasteTags
+                  .filter((t) => (t.group ?? "Taste") === g)
+                  .map((t) => (
+                    <span key={t.id} className="rounded-md bg-panel-2 px-2 py-1 text-xs capitalize" title={t.type}>
+                      {t.name}
+                    </span>
+                  ))}
+              </div>
             ))}
           </div>
         </section>
@@ -319,7 +348,8 @@ export function MarketScan({ board, onFocus }: { board: Board; onFocus: (city: s
   return (
     <div>
       <p className="mb-3 text-xs text-muted">
-        Scored by {board.markets[0].evidence.replace(/ \(\d+ results\)$/, "")} (Qloo Insights). Highlighted cities made the tour.
+        Fan index 0–100: Qloo&apos;s {board.markets[0].evidence.replace(/ \(.*\)$/, "")}, rescaled across the cities scanned. 0 means Qloo
+        found no local resonance. Highlighted cities made the tour.
       </p>
       <ul className="space-y-1.5">
         {board.markets.map((m, i) => (
@@ -329,6 +359,9 @@ export function MarketScan({ board, onFocus }: { board: Board; onFocus: (city: s
               <span className={`w-32 shrink-0 truncate ${chosen.has(m.city) ? "font-semibold text-amber" : ""}`}>{m.city}</span>
               <Meter value={m.affinity} max={max} color={chosen.has(m.city) ? "bg-amber" : "bg-pink/60"} />
               <span className="w-8 text-right text-xs tabular-nums">{pct(m.affinity)}</span>
+              <span className="hidden w-20 text-right font-mono text-[11px] text-muted sm:inline" title="Mean raw Qloo affinity">
+                {m.raw ? m.raw.toFixed(4) : "–"}
+              </span>
             </button>
           </li>
         ))}

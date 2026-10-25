@@ -3,9 +3,10 @@ import type { QlooSession } from "../qloo/client";
 import {
   demographicsFrom,
   entitiesFrom,
-  heatmapFrom,
+  neighborhoodsFrom,
   tagsFrom,
   type Entity,
+  type HeatPoint,
 } from "../qloo/normalize";
 import { findMarket, marketsFor, type Market } from "../markets";
 import { orderStops, scheduleLegs } from "../routing";
@@ -38,11 +39,25 @@ const QLOO_TYPE: Record<ActType, string> = {
   podcast: "urn:entity:podcast",
 };
 
-const VENUE_QUERIES: Record<ActType, string[]> = {
-  musician: ["music venue", "live music", "concert hall"],
-  comedian: ["comedy club", "theater"],
-  podcast: ["theater", "event venue", "live music"],
+/** Venue tag ids verified against the Qloo tag search (urn:tag:category:place / genre:place). */
+const VENUE_TAGS: Record<ActType, string[]> = {
+  musician: ["urn:tag:category:place:live_music_venue", "urn:tag:genre:place:live_music_venue"],
+  comedian: ["urn:tag:category:place:comedy_club", "urn:tag:genre:place:comedy_club", "urn:tag:offerings:place:theater"],
+  podcast: ["urn:tag:offerings:place:theater", "urn:tag:category:place:live_music_venue"],
 };
+
+const VENUE_SEARCH: Record<ActType, string> = {
+  musician: "live music venue",
+  comedian: "comedy club",
+  podcast: "theater",
+};
+
+/** Cross-domain taste queries: what else the fanbase over-indexes on. */
+const TASTE_QUERIES: { group: string; params: Record<string, string>; acts?: ActType[] }[] = [
+  { group: "Sound", params: { "filter.tag.types": "urn:tag:genre:music" }, acts: ["musician"] },
+  { group: "Themes & style", params: { "filter.parents.types": "urn:entity:movie,urn:entity:tv_show,urn:entity:book" } },
+  { group: "On screen & page", params: { "filter.tag.types": "urn:tag:genre:media" } },
+];
 
 const round = (n?: number, d = 3) => (n === undefined ? undefined : Math.round(n * 10 ** d) / 10 ** d);
 
@@ -142,13 +157,17 @@ const profileAudience: RoadieTool = {
   label: () => "Profiling the fanbase's demographics and taste DNA",
   async run(ctx) {
     const ids = signalIds(ctx).join(",");
-    const [demo, tags] = await Promise.all([
+    const queries = TASTE_QUERIES.filter((q) => !q.acts || q.acts.includes(ctx.actType));
+    const [demo, ...tagSets] = await Promise.all([
       ctx.session
         .get("/v2/insights", { "filter.type": "urn:demographics", "signal.interests.entities": ids }, "Audience age/gender affinity")
         .catch(() => null),
-      ctx.session
-        .get("/v2/insights", { "filter.type": "urn:tag", "signal.interests.entities": ids, take: 30 }, "Fanbase taste tags")
-        .catch(() => null),
+      ...queries.map((q) =>
+        ctx.session
+          .get("/v2/insights", { "filter.type": "urn:tag", "signal.interests.entities": ids, ...q.params, take: 8 }, `Fan taste: ${q.group}`)
+          .then(tagsFrom)
+          .catch(() => []),
+      ),
     ]);
     const rows = demographicsFrom(demo);
     const avg = (key: "age" | "gender") => {
@@ -158,24 +177,63 @@ const profileAudience: RoadieTool = {
       for (const k of Object.keys(out)) out[k] = Math.round(out[k] * 100) / 100;
       return out;
     };
-    const tasteTags = tagsFrom(tags)
-      .filter((t) => !/streaming_service|:audience:/.test(t.id))
-      .slice(0, 20);
+    const seen = new Set<string>();
+    const tasteTags = queries.flatMap((q, i) =>
+      tagSets[i]
+        .filter((t) => {
+          const k = t.name.trim().toLowerCase();
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        })
+        .slice(0, 8)
+        .map((t) => ({ id: t.id, name: t.name.trim(), type: t.type, group: q.group })),
+    );
     ctx.board.audience = { age: avg("age"), gender: avg("gender"), tasteTags };
     const topAge = Object.entries(ctx.board.audience.age).sort((a, b) => b[1] - a[1])[0];
     return {
       summary: topAge
-        ? `Fans skew ${topAge[0].replace(/_/g, " ")}; ${tasteTags.length} taste tags`
-        : `${tasteTags.length} taste tags found`,
+        ? `Fans skew ${topAge[0].replace(/_/g, " ")}; ${tasteTags.length} taste signals`
+        : `${tasteTags.length} taste signals found`,
       data: {
         age_affinity: ctx.board.audience.age,
         gender_affinity: ctx.board.audience.gender,
-        taste_tags: tasteTags.map((t) => `${t.name} (${t.type.split(":").slice(2).join(":")})`),
-        note: "Affinity values are relative to the average population: positive = over-indexes.",
+        taste: Object.fromEntries(queries.map((q) => [q.group, tasteTags.filter((t) => t.group === q.group).map((t) => t.name)])),
+        note: "Age/gender values are relative to the average population: positive = over-indexes.",
       },
     };
   },
 };
+
+/**
+ * Qloo's location affinities sit in a narrow band near 1, so rescale each signal
+ * entity across the scanned cities before averaging: present = 0.25..1 by value,
+ * absent (Qloo found no local resonance) = 0. Markets without per-entity data
+ * (fallback method) are min-max scaled on their raw score.
+ */
+function rescore(markets: MarketScore[], ids: string[]): MarketScore[] {
+  const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+  const scaled = markets.map((m) => {
+    if (!m.perEntity) return { ...m, affinity: 0 };
+    const parts = ids.map((id) => {
+      const v = m.perEntity![id];
+      if (v === undefined) return 0;
+      const present = markets.map((x) => x.perEntity?.[id]).filter((x): x is number => x !== undefined);
+      const lo = Math.min(...present);
+      const hi = Math.max(...present);
+      return hi - lo < 1e-9 ? 1 : 0.25 + (0.75 * (v - lo)) / (hi - lo);
+    });
+    return { ...m, affinity: mean(parts) };
+  });
+  const flat = scaled.filter((m) => !m.perEntity);
+  if (flat.length) {
+    const lo = Math.min(...flat.map((m) => m.raw ?? 0));
+    const hi = Math.max(...flat.map((m) => m.raw ?? 0));
+    for (const m of flat) m.affinity = hi - lo < 1e-9 ? 0.5 : ((m.raw ?? 0) - lo) / (hi - lo);
+  }
+  const sorted = scaled.sort((a, b) => b.affinity - a.affinity);
+  return sorted.map((m, i) => ({ ...m, index: sorted.length > 1 ? 1 - i / (sorted.length - 1) : 1 }));
+}
 
 const scoreMarkets: RoadieTool = {
   name: "score_markets",
@@ -211,65 +269,78 @@ const scoreMarkets: RoadieTool = {
     const type = ctx.board.act!.qlooType;
     const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
-    // Primary signal: affinity of the act's own entities among each city's audience.
+    // Primary signal: affinity of each signal entity among each city's audience.
+    // Qloo omits an entity when it doesn't resonate locally, so absence counts as 0.
     let method = "location-aware affinity of the act's signal entities";
-    let scored = await Promise.all(
+    const attempts = await Promise.all(
       candidates.map(async (mk) => {
         try {
           const data = await ctx.session.get(
             "/v2/insights",
             {
               "filter.type": type,
-              "signal.location.query": mk.city,
+              "signal.location.query": mk.query,
               "filter.results.entities": ids.join(","),
               take: ids.length,
             },
             `Fan affinity in ${mk.city}`,
           );
-          const ents = entitiesFrom(data);
-          return { mk, affinity: mean(ents.map((e) => e.affinity ?? e.popularity ?? 0)), matched: ents.length };
+          return { mk, byId: new Map(entitiesFrom(data).map((e) => [e.id, e.affinity ?? 0])) };
         } catch {
-          return { mk, affinity: 0, matched: 0 };
+          // A failed call is "unknown", not "no fans": leave the city out of the ranking.
+          return { mk, byId: null };
         }
       }),
     );
+    const perCity = attempts.filter((a): a is { mk: Market; byId: Map<string, number> } => a.byId !== null);
+    const unscored = attempts.filter((a) => a.byId === null).map((a) => a.mk.city);
+
+    let fresh: MarketScore[] = perCity.map(({ mk, byId }) => ({
+      city: mk.city,
+      country: mk.country,
+      lat: mk.lat,
+      lng: mk.lng,
+      affinity: 0,
+      raw: mean([...byId.values()]),
+      perEntity: Object.fromEntries(byId),
+      index: 0,
+      evidence: `${method} (${byId.size}/${ids.length} entities present)`,
+    }));
 
     // If the location signal doesn't separate cities, fall back to how strongly each
     // city's own places match the fanbase's taste (also a Qloo affinity score).
-    const vals = scored.map((s) => s.affinity);
-    if (candidates.length > 2 && Math.max(...vals) - Math.min(...vals) < 0.005) {
+    const spread = rescore(fresh, ids).map((x) => x.affinity);
+    if (candidates.length > 2 && Math.max(...spread) - Math.min(...spread) < 0.02) {
       method = "taste match of each city's places to the fanbase";
-      scored = await Promise.all(
-        candidates.map(async (mk) => {
+      fresh = await Promise.all(
+        perCity.map(async ({ mk }) => {
           const data = await ctx.session
             .get(
               "/v2/insights",
-              { "filter.type": "urn:entity:place", "filter.location.query": mk.city, "signal.interests.entities": ids.join(","), take: 10 },
+              { "filter.type": "urn:entity:place", "filter.location.query": mk.query, "signal.interests.entities": ids.join(","), take: 10 },
               `Taste match of ${mk.city}'s places`,
             )
             .catch(() => null);
           const ents = entitiesFrom(data);
-          return { mk, affinity: mean(ents.map((e) => e.affinity ?? 0)), matched: ents.length };
+          return {
+            city: mk.city,
+            country: mk.country,
+            lat: mk.lat,
+            lng: mk.lng,
+            affinity: 0,
+            raw: mean(ents.map((e) => e.affinity ?? 0)),
+            index: 0,
+            evidence: `${method} (${ents.length} places)`,
+          };
         }),
       );
     }
 
-    const sorted = [...scored].sort((a, b) => b.affinity - a.affinity);
-    const n = sorted.length;
-    const results: MarketScore[] = sorted.map((s, i) => ({
-      city: s.mk.city,
-      country: s.mk.country,
-      lat: s.mk.lat,
-      lng: s.mk.lng,
-      affinity: s.affinity,
-      index: n > 1 ? 1 - i / (n - 1) : 1,
-      evidence: `${method} (${s.matched} results)`,
-    }));
-
-    // Merge with earlier scores so follow-up scans accumulate.
+    // Merge with earlier scans, then rescore everything on one scale.
     const byCity = new Map(ctx.board.markets.map((x) => [x.city, x]));
-    for (const r of results) byCity.set(r.city, r);
-    ctx.board.markets = [...byCity.values()].sort((a, b) => b.affinity - a.affinity);
+    for (const r of fresh) byCity.set(r.city, r);
+    ctx.board.markets = rescore([...byCity.values()], ids);
+    const results = ctx.board.markets.filter((x) => fresh.some((f) => f.city === x.city));
 
     if (!ctx.board.wildcards.length) {
       const countries = [...new Set(candidates.map((c) => c.country))];
@@ -297,79 +368,74 @@ const scoreMarkets: RoadieTool = {
         : "No markets scored",
       data: {
         method,
-        ranked: results.map((r) => ({ city: r.city, country: r.country, fan_affinity: round(r.affinity) })),
+        ranked: results.map((r) => ({ city: r.city, country: r.country, fan_index: Math.round(r.affinity * 100), raw_affinity: round(r.raw, 4) })),
+        scale: "fan_index 0-100 is relative to the other candidate cities; 0 means Qloo found no local affinity.",
         wildcard_destinations: ctx.board.wildcards.map((w) => w.name),
         ...(unknown.length ? { unsupported_cities: unknown } : {}),
+        ...(unscored.length ? { unscored_cities_api_error: unscored } : {}),
       },
     };
   },
 };
 
-const venueTagCache = new Map<ActType, string[]>();
-
-async function venueTags(ctx: ToolContext): Promise<string[]> {
-  const hit = venueTagCache.get(ctx.actType);
-  if (hit) return hit;
-  const lists = await Promise.all(
-    VENUE_QUERIES[ctx.actType].map((q) =>
-      ctx.session
-        .get("/v2/tags", { "filter.query": q, take: 6 }, `Find Qloo tag for “${q}”`)
-        .then(tagsFrom)
-        .catch(() => []),
-    ),
-  );
-  const ids = [
-    ...new Set(
-      lists
-        .flat()
-        .filter((t) => t.id.includes(":place") || t.type.includes(":place") || t.id.includes("category"))
-        .map((t) => t.id),
-    ),
-  ].slice(0, 6);
-  if (ids.length) venueTagCache.set(ctx.actType, ids);
-  return ids;
-}
-
 const scoutCity: RoadieTool = {
   name: "scout_city",
   description:
-    "Deep-dive one city: a Qloo heatmap of where the act's fans cluster, taste-matched venues for the show, and local spots (food, bars, shops) the same audience loves, useful for meet-and-greets, content shoots and flyering.",
+    "Deep-dive one city: the named neighbourhoods where the act's fans over-index (Qloo neighbourhood heatmap), taste-matched venues for the show, and local spots (food, bars, shops, culture) the same audience loves, useful for meet-and-greets, content shoots and flyering.",
   parameters: {
     type: "object",
     properties: { city: { type: "string" } },
     required: ["city"],
   },
-  label: (a) => `Scouting ${a.city}: fan hotspots, venues, local spots`,
+  label: (a) => `Scouting ${a.city}: fan neighbourhoods, venues, local spots`,
   async run(ctx, args) {
     const ids = signalIds(ctx).join(",");
     const mk = findMarket(String(args.city));
     const city = mk?.city ?? String(args.city);
-    const tags = await venueTags(ctx);
+    const where = mk?.query ?? city;
+    const venueTags = VENUE_TAGS[ctx.actType].join(",");
 
-    const [heat, venuesRaw] = await Promise.all([
+    const [hoods, venuesRaw, hangoutsRaw] = await Promise.all([
+      ctx.session
+        .get<HeatPoint[]>(
+          "/v2/insights",
+          {
+            "filter.type": "urn:heatmap",
+            "filter.location.query": where,
+            "signal.interests.entities": ids,
+            "output.heatmap.boundary": "urn:entity:locality",
+          },
+          `Fan neighbourhoods in ${city}`,
+          { id: "hoods12", fn: (d) => neighborhoodsFrom(d).slice(0, 12) },
+        )
+        .catch(() => [] as HeatPoint[]),
       ctx.session
         .get(
           "/v2/insights",
-          { "filter.type": "urn:heatmap", "filter.location.query": city, "signal.interests.entities": ids, take: 100 },
-          `Fan heatmap for ${city}`,
+          {
+            "filter.type": "urn:entity:place",
+            "filter.location.query": where,
+            "filter.tags": venueTags,
+            "operator.filter.tags": "union",
+            "signal.interests.entities": ids,
+            take: 8,
+          },
+          `Taste-matched venues in ${city}`,
         )
         .catch(() => null),
-      tags.length
-        ? ctx.session
-            .get(
-              "/v2/insights",
-              {
-                "filter.type": "urn:entity:place",
-                "filter.location.query": city,
-                "filter.tags": tags.join(","),
-                "operator.filter.tags": "union",
-                "signal.interests.entities": ids,
-                take: 8,
-              },
-              `Taste-matched venues in ${city}`,
-            )
-            .catch(() => null)
-        : Promise.resolve(null),
+      ctx.session
+        .get(
+          "/v2/insights",
+          {
+            "filter.type": "urn:entity:place",
+            "filter.location.query": where,
+            "filter.exclude.tags": venueTags,
+            "signal.interests.entities": ids,
+            take: 8,
+          },
+          `Local spots ${city} fans love`,
+        )
+        .catch(() => null),
     ]);
 
     let venues = entitiesFrom(venuesRaw);
@@ -378,43 +444,29 @@ const scoutCity: RoadieTool = {
         .get(
           "/search",
           {
-            query: VENUE_QUERIES[ctx.actType][0],
+            query: VENUE_SEARCH[ctx.actType],
             types: "urn:entity:place",
             "filter.location": `${mk.lat},${mk.lng}`,
             "filter.radius": 15,
             take: 8,
           },
-          `Venue search near ${city} (fallback)`,
+          `Venue search near ${city} (fallback, not taste-ranked)`,
         )
         .catch(() => null);
       venues = entitiesFrom(fallback);
     }
-
-    const hangoutsRaw = await ctx.session
-      .get(
-        "/v2/insights",
-        {
-          "filter.type": "urn:entity:place",
-          "filter.location.query": city,
-          "signal.interests.entities": ids,
-          "filter.exclude.entities": venues.map((v) => v.id).join(",") || undefined,
-          take: 8,
-        },
-        `Local spots ${city} fans love`,
-      )
-      .catch(() => null);
-    const hangouts = entitiesFrom(hangoutsRaw);
-
-    const hotspots = heatmapFrom(heat)
-      .sort((a, b) => b.affinity - a.affinity)
-      .slice(0, 12);
+    const venueIds = new Set(venues.map((v) => v.id));
+    const hangouts = entitiesFrom(hangoutsRaw).filter((h) => !venueIds.has(h.id));
+    const hotspots = Array.isArray(hoods) ? hoods : [];
     ctx.board.scouts[city] = { city, hotspots, venues, hangouts };
 
     return {
-      summary: `${venues.length} venues, ${hangouts.length} local spots, ${hotspots.length} hotspots`,
+      summary: `${venues.length} venues, ${hangouts.length} local spots${
+        hotspots.length ? `; fans cluster in ${hotspots.slice(0, 2).map((h) => h.name).join(", ")}` : ""
+      }`,
       data: {
         city,
-        fan_hotspots: hotspots.slice(0, 5).map((h) => ({ lat: round(h.lat, 4), lng: round(h.lng, 4), affinity: round(h.affinity) })),
+        fan_neighbourhoods: hotspots.slice(0, 6).map((h) => ({ name: h.name, affinity: round(h.affinity, 2) })),
         venues: venues.map(brief),
         local_spots: hangouts.map(brief),
       },
@@ -431,7 +483,8 @@ const findOpeners: RoadieTool = {
     properties: {
       max_popularity: {
         type: "number",
-        description: "0-1 popularity percentile ceiling. Default: just above the act's own popularity.",
+        description:
+          "0-1 popularity percentile ceiling. Default: just below the act's own popularity, or 0.9 for acts not in Qloo.",
       },
     },
   },
@@ -439,12 +492,10 @@ const findOpeners: RoadieTool = {
   async run(ctx, args) {
     const ids = signalIds(ctx);
     const act = ctx.board.act!;
-    const basePop =
-      act.found?.popularity ??
-      (act.references.length
-        ? act.references.reduce((s, r) => s + (r.popularity ?? 0.9), 0) / act.references.length
-        : 0.9);
-    const ceiling = Math.min(0.995, Number(args.max_popularity) || basePop + 0.02);
+    // Support acts should be smaller than the headliner. A brand-new act (modelled via
+    // its references) gets emerging acts below the 90th popularity percentile.
+    const fallbackCeiling = act.found?.popularity !== undefined ? Math.max(0.5, act.found.popularity - 0.015) : 0.9;
+    const ceiling = Math.min(0.995, Number(args.max_popularity) || fallbackCeiling);
     const data = await ctx.session.get(
       "/v2/insights",
       {
@@ -468,7 +519,14 @@ const findOpeners: RoadieTool = {
             `Shared taste: act vs ${o.name}`,
           )
           .catch(() => null);
-        const overlap = [...new Set(tagsFrom(cmp).map((t) => t.name))].slice(0, 6);
+        const overlap = [
+          ...new Set(
+            tagsFrom(cmp)
+              .filter((t) => /genre|characteristic|theme|style/.test(t.type))
+              .sort((x, y) => (y.affinity ?? 0) - (x.affinity ?? 0))
+              .map((t) => t.name.trim()),
+          ),
+        ].slice(0, 5);
         openers[i] = { ...o, ...(overlap.length ? { overlap } : {}) } as typeof o;
       }),
     );
@@ -498,7 +556,7 @@ const findPartners: RoadieTool = {
           { "filter.type": type, "signal.interests.entities": ids, "filter.exclude.entities": ids, take },
           purpose,
         )
-        .then(entitiesFrom)
+        .then((d) => entitiesFrom(d).filter((e, i, all) => all.findIndex((x) => x.name === e.name) === i))
         .catch(() => [] as Entity[]);
     const [brands, podcasts, shows] = await Promise.all([
       get("urn:entity:brand", 12, "Brands the fanbase over-indexes on"),
