@@ -53,7 +53,7 @@ Without Qloo, Roadie has nothing to stand on. Every number and name on the scree
 ```mermaid
 flowchart LR
   UI["Next.js client<br/>(form, feed, map, tabs)"] -- "POST /api/plan (NDJSON stream)" --> API["Route handler<br/>validation + rate limit"]
-  API --> Agent["Roadie agent loop<br/>Claude Opus 5.5 tool use"]
+  API --> Agent["Roadie agent loop<br/>Gemini function calling"]
   Agent -- "parallel tool calls" --> Tools["8 Roadie tools"]
   Tools -- "GET, server-side key,<br/>8 req/s gate + cache" --> Qloo[("Qloo Hackathon API")]
   Tools --> Board["Plan board<br/>(single source of truth)"]
@@ -65,7 +65,7 @@ flowchart LR
 - `src/lib/qloo/normalize.ts`: flattens Qloo entities, tags, demographics and neighbourhood heatmaps (WKT outlines are parsed without regex, admin areas and far-away places are dropped).
 - `src/lib/markets.ts`: about 80 touring markets with locality queries validated against Qloo, so "Washington" means D.C., not the state, and "Copenhagen" means Denmark, not New York.
 - `src/lib/agent/tools.ts`: the eight tools, venue ranking (rooms over museums), per-entity market rescaling, and the guardrails in `finalize_plan`.
-- `src/lib/agent/runner.ts`: the **Claude Opus 5.5** streaming tool loop (adaptive thinking, parallel tool calls, prompt caching, server-side refusal fallback), an alternative Gemini loop, and **Autopilot**, a deterministic planner that runs the same tools when no LLM is configured or the LLM fails.
+- `src/lib/agent/runner.ts`: the **Gemini** streaming function-calling loop that runs the live demo (thought summaries in the activity feed, parallel tool calls, automatic switch to a fallback model when one is overloaded or out of quota), an equivalent Claude loop for teams with an Anthropic key, and **Autopilot**, a deterministic planner that runs the same tools when no LLM is configured or the LLM fails.
 - `src/lib/routing.ts`: exact open-path TSP (Held-Karp) and scheduling.
 - `src/app/api/plan/route.ts`: zod-validated, rate-limited NDJSON streaming endpoint.
 
@@ -81,7 +81,7 @@ Requirements: Node.js 20.9+.
 git clone https://github.com/sanjaysaini383/Qloo.git roadie
 cd roadie
 npm install
-cp .env.example .env.local   # add QLOO_API_KEY and ANTHROPIC_API_KEY
+cp .env.example .env.local   # add QLOO_API_KEY and GEMINI_API_KEY
 npm run dev                  # http://localhost:3000
 ```
 
@@ -89,9 +89,10 @@ npm run dev                  # http://localhost:3000
 | --- | --- | --- |
 | `QLOO_API_KEY` | for real data | Hackathon key from the [developer guide](https://docs.qloo.com/reference/qloo-llm-hackathon-developer-guide). Without it the app runs on **clearly labelled fictional demo data**. |
 | `QLOO_BASE_URL` | no | Defaults to `https://hackathon.api.qloo.com`. |
-| `ANTHROPIC_API_KEY` | for the agent | Powers the Claude agent loop and follow-up chat. |
-| `CLAUDE_MODEL` | no | Defaults to `claude-opus-5-5`. |
-| `GEMINI_API_KEY`, `GEMINI_MODEL` | no | Alternative engine, used only when no Anthropic key is set. |
+| `GEMINI_API_KEY` | for the agent | Powers the agent loop and follow-up chat. Get one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey). |
+| `GEMINI_MODEL` | no | Defaults to `gemini-flash-latest`. |
+| `GEMINI_FALLBACK_MODELS` | no | Comma-separated models to switch to when the main one is overloaded or out of quota. Defaults to `gemini-flash-lite-latest`. |
+| `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` | no | Alternative engine (Claude, default `claude-opus-5-5`); takes priority when set. |
 | `PLAN_LIMIT_PER_HOUR`, `CHAT_LIMIT_PER_HOUR` | no | Per-IP limits that protect the API quotas on the public demo. |
 
 Without an LLM key, Autopilot still builds a full plan from live Qloo data; only the free-form chat is disabled.
@@ -101,7 +102,7 @@ Tests: `npm test` (routing optimality against brute force, response normalisatio
 ## Deploy (Vercel)
 
 1. Import this repository at [vercel.com/new](https://vercel.com/new) (framework preset: Next.js).
-2. Add `QLOO_API_KEY` and `ANTHROPIC_API_KEY` under Settings → Environment Variables.
+2. Add `QLOO_API_KEY` and `GEMINI_API_KEY` under Settings → Environment Variables.
 3. Deploy. The plan endpoint streams for up to 300 s (`maxDuration`), which Vercel's Fluid compute supports on every plan.
 
 ## Responsible use and limits

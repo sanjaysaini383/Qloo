@@ -656,12 +656,16 @@ const planRoute: RoadieTool = {
   label: (a) => `Routing ${Array.isArray(a.cities) ? a.cities.length : 0} stops`,
   async run(ctx, args) {
     const names = (Array.isArray(args.cities) ? args.cities : []).map(String).slice(0, 12);
-    const picked = names.flatMap((n) => {
+    const unplaced: string[] = [];
+    const picked: Market[] = [];
+    for (const n of names) {
       const mk = findMarket(n);
-      return mk ? [mk] : [];
-    });
+      if (!mk) unplaced.push(n);
+      else if (!picked.some((p) => p.city === mk.city)) picked.push(mk);
+    }
     if (!picked.length) return { summary: "No routable cities", data: { error: "None of those cities are supported." } };
     const startMk = args.start_city ? findMarket(String(args.start_city)) : undefined;
+    if (args.start_city && !startMk) unplaced.push(String(args.start_city));
     const path = orderStops(
       picked.map((p) => ({ key: p.city, lat: p.lat, lng: p.lng })),
       startMk?.city,
@@ -690,6 +694,13 @@ const planRoute: RoadieTool = {
       };
     });
     const totalKm = legs.reduce((s, l) => s + l.fromKm, 0);
+    const requested = ctx.board.brief?.shows;
+    const notes = [
+      unplaced.length ? `Not a supported market, left out: ${unplaced.join(", ")}. Use the nearest market name from score_markets.` : "",
+      requested && requested !== path.length
+        ? `The brief asks for ${requested} shows and this itinerary has ${path.length}. Re-route unless the act asked for this change.`
+        : "",
+    ].filter(Boolean);
     return {
       summary: `${path.map((p) => p.key).join(" → ")} · ${totalKm.toLocaleString()} km`,
       data: {
@@ -701,6 +712,7 @@ const planRoute: RoadieTool = {
           scouted: !!ctx.board.scouts[s.city],
         })),
         total_km: totalKm,
+        ...(notes.length ? { notes } : {}),
       },
     };
   },

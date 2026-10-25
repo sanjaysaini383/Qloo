@@ -76,6 +76,7 @@ test("neighbourhoods: drop admin areas, far points and huge regions; keep names"
           { name: "Logan Square", query: { affinity: 1 }, boundary: sq(-87.7, 41.92, 0.01) },
           { name: "Cook County", query: { affinity: 0.99 }, boundary: sq(-87.7, 41.9, 0.01) },
           { name: "Mansion House ED", query: { affinity: 0.98 }, boundary: sq(-87.7, 41.9, 0.01) },
+          { name: "59", query: { affinity: 0.98 }, boundary: sq(-87.7, 41.9, 0.01) },
           { name: "Illinois", query: { affinity: 0.97 }, boundary: sq(-89, 40, 3) },
           { name: "Faraway", query: { affinity: 0.96 }, boundary: "POINT (-80 40)" },
           { name: "Wicker Park", query: { affinity: 0.95 }, boundary: "POINT (-87.677 41.908)" },

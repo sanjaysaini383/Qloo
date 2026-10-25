@@ -1,8 +1,8 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { GoogleGenAI, type Content, type Part } from "@google/genai";
+import { ApiError, GoogleGenAI, type Content, type Part } from "@google/genai";
 import { QlooSession, isMockMode } from "../qloo/client";
-import { REGIONS, marketsFor } from "../markets";
+import { REGIONS, findMarket, marketsFor } from "../markets";
 import type { AgentEvent, Board, Brief } from "../types";
 import { TOOLS, toolByName, type ToolContext } from "./tools";
 
@@ -10,6 +10,12 @@ type Emit = (e: AgentEvent) => void;
 
 export const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
 export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
+/** Tried in order when the model before it is overloaded, out of quota or unavailable. */
+const GEMINI_MODELS = [
+  ...new Set([GEMINI_MODEL, ...(process.env.GEMINI_FALLBACK_MODELS ?? "gemini-flash-lite-latest").split(",")]),
+]
+  .map((s) => s.trim())
+  .filter(Boolean);
 const MAX_TURNS = 24;
 
 /** Which reasoning engine this deployment uses: Claude if keyed, else Gemini, else Autopilot. */
@@ -236,42 +242,113 @@ async function runClaude(ctx: ToolContext, input: RunInput, emit: Emit) {
   emit({ type: "message", text: "I hit my step limit. Here's the plan as it stands; ask me to continue any part of it." });
 }
 
-/** Gemini agent loop (alternative engine when only GEMINI_API_KEY is set). */
+/** Collapses streamed chunks into one turn, merging text runs but keeping thought signatures in place. */
+function appendPart(parts: Part[], p: Part) {
+  const last = parts[parts.length - 1];
+  const isText = (x?: Part) => x?.text !== undefined && !x.functionCall;
+  if (isText(p) && isText(last) && !!last!.thought === !!p.thought && !last!.thoughtSignature) {
+    last!.text += p.text!;
+    if (p.thoughtSignature) last!.thoughtSignature = p.thoughtSignature;
+  } else {
+    parts.push({ ...p });
+  }
+}
+
+/** Models that just failed are skipped for a few minutes, so the next plan doesn't wait on them again. */
+const geminiBusyUntil = new Map<string, number>();
+const FIRST_CHUNK_MS = 15_000;
+
+function whyUnavailable(err: unknown) {
+  const status = err instanceof ApiError ? err.status : 0;
+  if (status === 429) return "out of quota";
+  if (status === 404) return "not available to this key";
+  if (status === 503) return "overloaded right now";
+  return "not responding";
+}
+
+/** Gemini agent loop: streaming, thought summaries, parallel function calls, model fallback. */
 async function runGemini(ctx: ToolContext, input: RunInput, emit: Emit) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const ai = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY,
+    httpOptions: { timeout: 90_000, retryOptions: { attempts: 2, initialDelay: 1, maxDelay: 4 } },
+  });
   const contents: Content[] = openingTurns(input, ctx.board).map((t) => ({
     role: t.role === "user" ? "user" : "model",
     parts: [{ text: t.text }],
   }));
+  const tools = [
+    {
+      functionDeclarations: TOOLS.map((t) => ({
+        name: t.name,
+        description: t.description,
+        parametersJsonSchema: t.parameters,
+      })),
+    },
+  ];
 
+  let m = Math.max(0, GEMINI_MODELS.findIndex((x) => (geminiBusyUntil.get(x) ?? 0) < Date.now()));
+  if (m > 0) emit({ type: "status", mode: "agent", mock: isMockMode(), model: GEMINI_MODELS[m] });
+
+  let badTurns = 0;
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const res = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents,
-      config: {
-        systemInstruction: SYSTEM,
-        temperature: 0.4,
-        tools: [
-          {
-            functionDeclarations: TOOLS.map((t) => ({
-              name: t.name,
-              description: t.description,
-              parametersJsonSchema: t.parameters,
-            })),
-          },
-        ],
-      },
-    });
-    const content = res.candidates?.[0]?.content;
-    if (!content?.parts?.length) throw new Error("The model returned an empty response.");
-    contents.push(content);
+    const parts: Part[] = [];
+    let finish: string | undefined;
+    // A model that accepts the request but never starts answering is abandoned quickly.
+    const abort = new AbortController();
+    const firstChunk = setTimeout(() => abort.abort(), FIRST_CHUNK_MS);
+    try {
+      const stream = await ai.models.generateContentStream({
+        model: GEMINI_MODELS[m],
+        contents,
+        config: {
+          systemInstruction: SYSTEM,
+          thinkingConfig: { includeThoughts: true },
+          tools,
+          abortSignal: abort.signal,
+        },
+      });
+      for await (const chunk of stream) {
+        clearTimeout(firstChunk);
+        const cand = chunk.candidates?.[0];
+        finish = cand?.finishReason ?? finish;
+        for (const p of cand?.content?.parts ?? []) {
+          if (p.text && !p.thought) emit({ type: "delta", text: p.text });
+          appendPart(parts, p);
+        }
+      }
+    } catch (err) {
+      clearTimeout(firstChunk);
+      if (m + 1 >= GEMINI_MODELS.length) throw err;
+      geminiBusyUntil.set(GEMINI_MODELS[m], Date.now() + 3 * 60_000);
+      emit({ type: "thought", text: `${GEMINI_MODELS[m]} is ${whyUnavailable(err)}, so I'm switching to ${GEMINI_MODELS[m + 1]}.` });
+      m++;
+      emit({ type: "status", mode: "agent", mock: isMockMode(), model: GEMINI_MODELS[m] });
+      continue;
+    }
 
-    const calls = content.parts.filter((p) => p.functionCall).map((p) => p.functionCall!);
-    const text = content.parts
+    const calls = parts.filter((p) => p.functionCall).map((p) => p.functionCall!);
+    const text = parts
       .filter((p) => p.text && !p.thought)
       .map((p) => p.text)
       .join("")
       .trim();
+    const thought = parts
+      .filter((p) => p.text && p.thought)
+      .map((p) => p.text!.trim())
+      .join("\n\n");
+
+    // A malformed or empty turn is retried without being added to the history.
+    if (!parts.length || finish === "MALFORMED_FUNCTION_CALL" || finish === "UNEXPECTED_TOOL_CALL") {
+      if (badTurns++ >= 2) throw new Error(`The model returned no usable response (${finish ?? "empty"}).`);
+      continue;
+    }
+    if (!calls.length && !text && finish && finish !== "STOP" && finish !== "MAX_TOKENS") {
+      emit({ type: "error", text: "The model declined this request. Try rephrasing it." });
+      return;
+    }
+    badTurns = 0;
+    contents.push({ role: "model", parts });
+    if (thought) emit({ type: "thought", text: thought });
 
     if (!calls.length) {
       emit({ type: "message", text: text || "Done." });
@@ -280,10 +357,12 @@ async function runGemini(ctx: ToolContext, input: RunInput, emit: Emit) {
     if (text) emit({ type: "thought", text });
 
     const results = await Promise.all(calls.map((c, i) => runTool(ctx, c.name ?? "", c.args, emit, `g${turn}-${i}`)));
-    const parts: Part[] = calls.map((c, i) => ({
-      functionResponse: { id: c.id, name: c.name, response: { result: results[i] } },
-    }));
-    contents.push({ role: "user", parts });
+    contents.push({
+      role: "user",
+      parts: calls.map((c, i) => ({
+        functionResponse: { id: c.id, name: c.name, response: { result: results[i] } },
+      })),
+    });
   }
   emit({ type: "message", text: "I hit my step limit. Here's the plan as it stands; ask me to continue any part of it." });
 }
@@ -305,7 +384,8 @@ async function autopilot(ctx: ToolContext, emit: Emit) {
   await call("profile_audience");
   await call("score_markets");
   const top = ctx.board.markets.filter((m) => m.affinity > 0);
-  const home = b.homeCity ? top.find((m) => m.city.toLowerCase() === b.homeCity!.toLowerCase()) : undefined;
+  const homeCity = b.homeCity ? findMarket(b.homeCity)?.city : undefined;
+  const home = top.find((m) => m.city === homeCity);
   const picks = [...(home ? [home] : []), ...top.filter((m) => m !== home)].slice(0, b.shows);
   if (!picks.length) {
     emit({ type: "message", text: "Qloo returned no market signal for this act in that region. Try another region or different reference acts." });

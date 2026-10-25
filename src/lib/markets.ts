@@ -126,10 +126,58 @@ export function marketsFor(region: RegionId): Market[] {
   return MARKETS.filter((x) => x.region === region);
 }
 
+/** Boroughs, suburbs, nicknames and local spellings that should land on a market. */
+const ALIASES: Record<string, string> = {
+  brooklyn: "New York",
+  manhattan: "New York",
+  queens: "New York",
+  bronx: "New York",
+  "the bronx": "New York",
+  nyc: "New York",
+  la: "Los Angeles",
+  hollywood: "Los Angeles",
+  sf: "San Francisco",
+  oakland: "San Francisco",
+  berkeley: "San Francisco",
+  "bay area": "San Francisco",
+  dc: "Washington",
+  "st paul": "Minneapolis",
+  "saint paul": "Minneapolis",
+  "saint louis": "St. Louis",
+  "st louis": "St. Louis",
+  nola: "New Orleans",
+  bangalore: "Bengaluru",
+  bombay: "Mumbai",
+  "new delhi": "Delhi",
+  gurgaon: "Delhi",
+  gurugram: "Delhi",
+  noida: "Delhi",
+  calcutta: "Kolkata",
+  madras: "Chennai",
+  cochin: "Kochi",
+  koln: "Cologne",
+  kobenhavn: "Copenhagen",
+  praha: "Prague",
+  lisboa: "Lisbon",
+  milano: "Milan",
+  wien: "Vienna",
+  warszawa: "Warsaw",
+  bruxelles: "Brussels",
+  cdmx: "Mexico City",
+};
+
+const fold = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim()
+    .toLowerCase();
+
 export function findMarket(city: string): Market | undefined {
-  const q = city.trim().toLowerCase();
+  const raw = fold(city);
+  const q = fold(ALIASES[raw] ?? ALIASES[raw.split(",")[0].trim()] ?? city);
   return (
-    MARKETS.find((x) => x.city.toLowerCase() === q) ??
-    MARKETS.find((x) => q.startsWith(x.city.toLowerCase()) || x.city.toLowerCase().startsWith(q))
+    MARKETS.find((x) => fold(x.city) === q) ??
+    MARKETS.find((x) => q.startsWith(fold(x.city)) || fold(x.city).startsWith(q))
   );
 }

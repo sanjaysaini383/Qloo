@@ -160,11 +160,12 @@ export function neighborhoodsFrom(
   if (!Array.isArray(list)) return [];
   const ADMIN = /\b(township|county|district|region|kommune|municipality|province|state|metropolitan|taluka|tehsil|division|prefecture|borough of|ward|zone)\b/i;
   const ELECTORAL = /\bED\b/; // Irish electoral divisions
+  const NO_LETTERS = /^[^\p{L}]*$/u; // numbered wards such as "59"
   const out: HeatPoint[] = [];
   for (const e of list) {
     const name = String(e?.name ?? "");
     // Neighbourhood outlines are small; anything huge is a region, so skip it unparsed.
-    if (typeof e?.boundary !== "string" || e.boundary.length > 200_000 || !name || ADMIN.test(name) || ELECTORAL.test(name)) continue;
+    if (typeof e?.boundary !== "string" || e.boundary.length > 200_000 || !name || ADMIN.test(name) || ELECTORAL.test(name) || NO_LETTERS.test(name)) continue;
     const ring = wktRing(e.boundary);
     if (!ring.length) continue;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, sx = 0, sy = 0;

@@ -30,7 +30,7 @@ The result is a map, a ticket-stub itinerary, audience, partner and market-scan 
 ## How we built it
 
 - **Next.js 16 / React 19 / TypeScript** app deployed on Vercel. One streaming route handler (NDJSON) pushes agent events, tool progress, Qloo call receipts and plan-board updates to the browser in real time.
-- **Agent:** Claude Opus 5.5 in a streaming tool-use loop over eight Roadie tools, with adaptive thinking (its reasoning summaries appear in the activity feed), prompt caching and server-side refusal fallback. It runs tools in parallel where it can (all city scouts at once) and carries follow-up chat with the current plan as context. Gemini is supported as an alternative engine.
+- **Agent:** Google Gemini in a streaming function-calling loop over eight Roadie tools. Its thought summaries appear in the activity feed and its reply streams in as it's written. It runs tools in parallel where it can (all city scouts at once), retries through rate limits, and carries follow-up chat with the current plan as context. The same tools also run under Claude when an Anthropic key is set.
 - **Qloo endpoints used:** `/search`, `/v2/tags`, `/v2/analysis/compare`, and `/v2/insights` with `urn:demographics`, `urn:tag`, `urn:heatmap` (neighbourhood boundaries), `urn:entity:destination`, `urn:entity:place`, `urn:entity:artist` / `person` / `podcast`, `urn:entity:brand` and `urn:entity:tv_show`. Parameters used include `signal.location.query`, `filter.results.entities`, `filter.location.query`, `output.heatmap.boundary`, `filter.tags`, `filter.exclude.tags`, `filter.tag.types`, `filter.parents.types`, `filter.popularity.max`, `filter.exclude.entities` and `feature.explainability`. A typical plan makes 45 to 65 Qloo calls.
 - **Guardrail against hallucination:** the final `finalize_plan` tool is validated server-side. The agent can only choose venues, acts, brands and podcasts whose ids Qloo actually returned; anything else is rejected and reported back to the model.
 - **Autopilot fallback:** if the LLM is unavailable, a deterministic planner runs the same tools in a fixed order, so the demo never dead-ends.
@@ -65,7 +65,7 @@ Cultural taste is the missing input for practical agent work. The LLM is good at
 
 ## Built with
 
-nextjs, react, typescript, tailwindcss, qloo, claude, anthropic, leaflet, vercel
+nextjs, react, typescript, tailwindcss, qloo, gemini, google-genai, leaflet, vercel
 
 ## Testing instructions for judges
 
