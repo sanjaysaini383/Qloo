@@ -64,3 +64,28 @@ test("demographics and tags", () => {
   const tags = tagsFrom({ results: { tags: [{ tag_id: "urn:tag:genre:media:comedy", name: "Comedy", subtype: "urn:tag:genre:media" }] } });
   assert.deepEqual(tags[0], { id: "urn:tag:genre:media:comedy", name: "Comedy", type: "urn:tag:genre:media", affinity: undefined });
 });
+
+test("neighbourhoods: drop admin areas, far points and huge regions; keep names", async () => {
+  const { neighborhoodsFrom } = await import("../src/lib/qloo/normalize.ts");
+  const sq = (lng: number, lat: number, d: number) =>
+    `POLYGON ((${lng - d} ${lat - d}, ${lng + d} ${lat - d}, ${lng + d} ${lat + d}, ${lng - d} ${lat + d}, ${lng - d} ${lat - d}))`;
+  const hoods = neighborhoodsFrom(
+    {
+      results: {
+        entities: [
+          { name: "Logan Square", query: { affinity: 1 }, boundary: sq(-87.7, 41.92, 0.01) },
+          { name: "Cook County", query: { affinity: 0.99 }, boundary: sq(-87.7, 41.9, 0.01) },
+          { name: "Mansion House ED", query: { affinity: 0.98 }, boundary: sq(-87.7, 41.9, 0.01) },
+          { name: "Illinois", query: { affinity: 0.97 }, boundary: sq(-89, 40, 3) },
+          { name: "Faraway", query: { affinity: 0.96 }, boundary: "POINT (-80 40)" },
+          { name: "Wicker Park", query: { affinity: 0.95 }, boundary: "POINT (-87.677 41.908)" },
+          { name: "Huge", query: { affinity: 0.94 }, boundary: "POLYGON ((" + "1 1, ".repeat(50_000) + "1 1))" },
+        ],
+      },
+    },
+    { lat: 41.88, lng: -87.63 },
+  );
+  assert.deepEqual(hoods.map((h) => h.name), ["Logan Square", "Wicker Park"]);
+  assert.ok(hoods[0].polygon && hoods[0].polygon.length >= 4);
+  assert.equal(hoods[1].polygon, undefined);
+});

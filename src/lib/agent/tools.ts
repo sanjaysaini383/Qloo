@@ -41,10 +41,32 @@ const QLOO_TYPE: Record<ActType, string> = {
 
 /** Venue tag ids verified against the Qloo tag search (urn:tag:category:place / genre:place). */
 const VENUE_TAGS: Record<ActType, string[]> = {
-  musician: ["urn:tag:category:place:live_music_venue", "urn:tag:genre:place:live_music_venue"],
-  comedian: ["urn:tag:category:place:comedy_club", "urn:tag:genre:place:comedy_club", "urn:tag:offerings:place:theater"],
-  podcast: ["urn:tag:offerings:place:theater", "urn:tag:category:place:live_music_venue"],
+  musician: [
+    "urn:tag:category:place:live_music_venue",
+    "urn:tag:genre:place:live_music_venue",
+    "urn:tag:category:place:concert_hall",
+  ],
+  comedian: [
+    "urn:tag:category:place:comedy_club",
+    "urn:tag:genre:place:comedy_club",
+    "urn:tag:category:place:performing_arts_theater",
+  ],
+  podcast: [
+    "urn:tag:category:place:performing_arts_theater",
+    "urn:tag:category:place:concert_hall",
+    "urn:tag:category:place:live_music_venue",
+  ],
 };
+
+/** Fan-culture spots for meet-ups, content and flyering (verified tag ids). */
+const LOCAL_SPOT_TAGS = [
+  "urn:tag:category:place:coffee_shop",
+  "urn:tag:category:place:record_store",
+  "urn:tag:category:place:cocktail_bar",
+  "urn:tag:category:place:book_store",
+  "urn:tag:category:place:brewery",
+  "urn:tag:category:place:vintage_clothing_store",
+];
 
 const VENUE_SEARCH: Record<ActType, string> = {
   musician: "live music venue",
@@ -53,11 +75,40 @@ const VENUE_SEARCH: Record<ActType, string> = {
 };
 
 /** Cross-domain taste queries: what else the fanbase over-indexes on. */
-const TASTE_QUERIES: { group: string; params: Record<string, string>; acts?: ActType[] }[] = [
+const TASTE_QUERIES: { group: string; params: Record<string, string>; keep?: RegExp; acts?: ActType[] }[] = [
   { group: "Sound", params: { "filter.tag.types": "urn:tag:genre:music" }, acts: ["musician"] },
-  { group: "Themes & style", params: { "filter.parents.types": "urn:entity:movie,urn:entity:tv_show,urn:entity:book" } },
-  { group: "On screen & page", params: { "filter.tag.types": "urn:tag:genre:media" } },
+  {
+    group: "Themes & mood",
+    params: { "filter.parents.types": "urn:entity:movie,urn:entity:tv_show,urn:entity:book" },
+    keep: /:(theme|style|audience):/,
+  },
+  { group: "On screen & page", params: { "filter.tag.types": "urn:tag:genre:media" }, keep: /^(?!.*:adult$)/ },
 ];
+
+/** Signals that a place is a room acts actually play, used to rank venue candidates. */
+const ROOM_SIGNALS = /live music venue|music venue|independent music|concerts?|music hall|night ?club|indie rock|intimate|stage|comedy|cabaret|theater|theatre/i;
+const NOT_A_ROOM_NAME = /museum|academy of sciences|chapel|church|cathedral|school|college|university|library|memorial|garden|festival/i;
+const NOT_A_ROOM_TAG = /^(museum|science museum|history museum|art museum|children's museum|church|chapel|music school|school|university|library|park|garden|zoo|aquarium)$/i;
+
+/**
+ * Re-rank Qloo's taste-matched venues for bookability: keep Qloo's affinity order
+ * but push likely non-rooms down and, for brand-new acts, favour smaller rooms
+ * (lower popularity percentile) over marquee halls.
+ */
+function rankVenues(venues: Entity[], newAct: boolean): Entity[] {
+  const score = (v: Entity, i: number) => {
+    const text = `${v.name} ${v.tags.map((t) => t.name).join(" ")}`;
+    let s = -i; // Qloo order first
+    if (ROOM_SIGNALS.test(text)) s += 3;
+    if (NOT_A_ROOM_NAME.test(v.name) || v.tags.some((t) => NOT_A_ROOM_TAG.test(t.name))) s -= 12;
+    if (newAct && (v.popularity ?? 0) > 0.997) s -= 2;
+    return s;
+  };
+  return venues
+    .map((v, i) => ({ v, s: score(v, i) }))
+    .sort((a, b) => b.s - a.s)
+    .map((x) => x.v);
+}
 
 const round = (n?: number, d = 3) => (n === undefined ? undefined : Math.round(n * 10 ** d) / 10 ** d);
 
@@ -164,7 +215,7 @@ const profileAudience: RoadieTool = {
         .catch(() => null),
       ...queries.map((q) =>
         ctx.session
-          .get("/v2/insights", { "filter.type": "urn:tag", "signal.interests.entities": ids, ...q.params, take: 8 }, `Fan taste: ${q.group}`)
+          .get("/v2/insights", { "filter.type": "urn:tag", "signal.interests.entities": ids, ...q.params, take: 16 }, `Fan taste: ${q.group}`)
           .then(tagsFrom)
           .catch(() => []),
       ),
@@ -186,6 +237,7 @@ const profileAudience: RoadieTool = {
           seen.add(k);
           return true;
         })
+        .filter((t) => !q.keep || q.keep.test(t.id))
         .slice(0, 8)
         .map((t) => ({ id: t.id, name: t.name.trim(), type: t.type, group: q.group })),
     );
@@ -406,7 +458,7 @@ const scoutCity: RoadieTool = {
             "output.heatmap.boundary": "urn:entity:locality",
           },
           `Fan neighbourhoods in ${city}`,
-          { id: "hoods12", fn: (d) => neighborhoodsFrom(d).slice(0, 12) },
+          { id: "hoods12", fn: (d) => neighborhoodsFrom(d, mk).slice(0, 12) },
         )
         .catch(() => [] as HeatPoint[]),
       ctx.session
@@ -429,6 +481,8 @@ const scoutCity: RoadieTool = {
           {
             "filter.type": "urn:entity:place",
             "filter.location.query": where,
+            "filter.tags": LOCAL_SPOT_TAGS.join(","),
+            "operator.filter.tags": "union",
             "filter.exclude.tags": venueTags,
             "signal.interests.entities": ids,
             take: 8,
@@ -438,7 +492,7 @@ const scoutCity: RoadieTool = {
         .catch(() => null),
     ]);
 
-    let venues = entitiesFrom(venuesRaw);
+    let venues = rankVenues(entitiesFrom(venuesRaw), !ctx.board.act?.found);
     if (!venues.length && mk) {
       const fallback = await ctx.session
         .get(
@@ -456,7 +510,19 @@ const scoutCity: RoadieTool = {
       venues = entitiesFrom(fallback);
     }
     const venueIds = new Set(venues.map((v) => v.id));
-    const hangouts = entitiesFrom(hangoutsRaw).filter((h) => !venueIds.has(h.id));
+    let hangouts = entitiesFrom(hangoutsRaw).filter((h) => !venueIds.has(h.id));
+    if (hangouts.length < 3) {
+      // Thin coverage for cafés/record stores here: widen to any taste-matched place.
+      const wider = await ctx.session
+        .get(
+          "/v2/insights",
+          { "filter.type": "urn:entity:place", "filter.location.query": where, "filter.exclude.tags": venueTags, "signal.interests.entities": ids, take: 8 },
+          `Any places ${city} fans love (wider)`,
+        )
+        .catch(() => null);
+      const seen = new Set([...venueIds, ...hangouts.map((h) => h.id)]);
+      hangouts = [...hangouts, ...entitiesFrom(wider).filter((h) => !seen.has(h.id))].slice(0, 8);
+    }
     const hotspots = Array.isArray(hoods) ? hoods : [];
     ctx.board.scouts[city] = { city, hotspots, venues, hangouts };
 

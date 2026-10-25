@@ -132,35 +132,62 @@ export function heatmapFrom(data: any): HeatPoint[] {
 
 /** Parse the outer ring of a WKT POINT / POLYGON / MULTIPOLYGON into [lng, lat] pairs. */
 export function wktRing(wkt: string): [number, number][] {
-  const body = /\(+([^()]+)\)/.exec(wkt)?.[1];
-  if (!body) return [];
-  return body
+  // indexOf instead of a regex: country-sized boundaries are megabytes long.
+  let start = wkt.indexOf("(");
+  if (start < 0) return [];
+  while (wkt[start] === "(") start++;
+  const end = wkt.indexOf(")", start);
+  if (end < 0) return [];
+  return wkt
+    .slice(start, end)
     .split(",")
-    .map((pair) => pair.trim().split(/\s+/).map(Number) as [number, number])
+    .map((pair) => pair.trim().split(" ").filter(Boolean).map(Number) as [number, number])
     .filter((p) => p.length === 2 && p.every(Number.isFinite));
 }
 
 /**
  * Neighbourhood-level heatmap (output.heatmap.boundary=urn:entity:locality).
- * Qloo also returns the containing city, county, state and townships; those are
- * dropped by footprint size so only real neighbourhoods remain.
+ * Qloo also returns containing areas (city, county, district, state); those are
+ * dropped by name, footprint size and distance from the city centre, so only
+ * real neighbourhoods remain.
  */
-export function neighborhoodsFrom(data: any, maxSpanDeg = 0.12, maxPoints = 48): HeatPoint[] {
+export function neighborhoodsFrom(
+  data: any,
+  center?: { lat: number; lng: number },
+  { maxSpanDeg = 0.12, maxKm = 30, maxPoints = 48 } = {},
+): HeatPoint[] {
   const list = data?.results?.entities;
   if (!Array.isArray(list)) return [];
+  const ADMIN = /\b(township|county|district|region|kommune|municipality|province|state|metropolitan|taluka|tehsil|division|prefecture|borough of|ward|zone)\b/i;
+  const ELECTORAL = /\bED\b/; // Irish electoral divisions
   const out: HeatPoint[] = [];
   for (const e of list) {
-    const ring = typeof e?.boundary === "string" ? wktRing(e.boundary) : [];
-    if (!ring.length || /township|county/i.test(String(e?.name))) continue;
-    const lngs = ring.map((p) => p[0]);
-    const lats = ring.map((p) => p[1]);
-    const span = Math.max(Math.max(...lngs) - Math.min(...lngs), Math.max(...lats) - Math.min(...lats));
-    if (span > maxSpanDeg) continue;
+    const name = String(e?.name ?? "");
+    // Neighbourhood outlines are small; anything huge is a region, so skip it unparsed.
+    if (typeof e?.boundary !== "string" || e.boundary.length > 200_000 || !name || ADMIN.test(name) || ELECTORAL.test(name)) continue;
+    const ring = wktRing(e.boundary);
+    if (!ring.length) continue;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, sx = 0, sy = 0;
+    for (const [x, y] of ring) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      sx += x;
+      sy += y;
+    }
+    if (Math.max(maxX - minX, maxY - minY) > maxSpanDeg) continue;
+    const lat = sy / ring.length;
+    const lng = sx / ring.length;
+    if (center) {
+      const km = Math.hypot((lat - center.lat) * 111, (lng - center.lng) * 111 * Math.cos((center.lat * Math.PI) / 180));
+      if (km > maxKm) continue;
+    }
     const step = Math.max(1, Math.ceil(ring.length / maxPoints));
     out.push({
-      name: String(e.name),
-      lat: lats.reduce((a, b) => a + b, 0) / lats.length,
-      lng: lngs.reduce((a, b) => a + b, 0) / lngs.length,
+      name,
+      lat,
+      lng,
       affinity: num(e?.query?.affinity) ?? 0,
       popularity: num(e?.popularity) ?? 0,
       ...(ring.length > 2 ? { polygon: ring.filter((_, i) => i % step === 0).map(([x, y]) => [y, x] as [number, number]) } : {}),
