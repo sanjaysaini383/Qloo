@@ -3,7 +3,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Bot, Database, Printer } from "lucide-react";
 import { useRoadie } from "@/lib/useRoadie";
-import { BriefForm, PRESETS } from "./BriefForm";
+import { BriefForm, PRESETS, nextMonthStart } from "./BriefForm";
 import { AgentFeed } from "./AgentFeed";
 import { Audience, Itinerary, MarketScan, Partners, Receipts } from "./panels";
 
@@ -40,9 +40,7 @@ export default function RoadieApp() {
     const n = Number(new URLSearchParams(window.location.search).get("try"));
     const preset = Number.isInteger(n) ? PRESETS[n] : undefined;
     if (!preset) return;
-    const d = new Date();
-    d.setMonth(d.getMonth() + 2, 1);
-    start({ ...preset.brief, startDate: d.toISOString().slice(0, 10) });
+    start({ ...preset.brief, startDate: nextMonthStart() });
   }, [start]);
 
   useEffect(() => {

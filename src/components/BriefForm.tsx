@@ -10,10 +10,10 @@ const TYPES: { id: ActType; label: string; icon: typeof Music2 }[] = [
   { id: "podcast", label: "Live podcast", icon: Radio },
 ];
 
-function nextMonthStart() {
-  const d = new Date();
-  d.setMonth(d.getMonth() + 2, 1);
-  return d.toISOString().slice(0, 10);
+/** First day of the month after next, in UTC so the server render and the browser agree. */
+export function nextMonthStart() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 1)).toISOString().slice(0, 10);
 }
 
 export const PRESETS: { label: string; brief: Omit<Brief, "startDate"> }[] = [

@@ -14,9 +14,17 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Browser extensions (Grammarly, dark-mode tools) add attributes to <html> and <body> before
+  // React hydrates. This ignores attribute mismatches on these two elements only, not their children.
   return (
-    <html lang="en" className={`${anton.variable} ${inter.variable} ${mono.variable} antialiased`}>
-      <body className="min-h-screen">{children}</body>
+    <html
+      lang="en"
+      className={`${anton.variable} ${inter.variable} ${mono.variable} antialiased`}
+      suppressHydrationWarning
+    >
+      <body className="min-h-screen" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }
