@@ -104,6 +104,7 @@ export type AgentEvent =
   | { type: "tool_done"; id: string; ok: boolean; summary: string }
   | { type: "qloo"; call: QlooCallView }
   | { type: "board"; board: Board }
+  | { type: "delta"; text: string }
   | { type: "message"; text: string }
   | { type: "error"; text: string }
   | { type: "done" };

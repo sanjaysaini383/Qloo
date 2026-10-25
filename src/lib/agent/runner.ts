@@ -1,5 +1,6 @@
 import "server-only";
-import { GoogleGenAI, type Content, type FunctionCall, type Part } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI, type Content, type Part } from "@google/genai";
 import { QlooSession, isMockMode } from "../qloo/client";
 import { REGIONS, marketsFor } from "../markets";
 import type { AgentEvent, Board, Brief } from "../types";
@@ -7,26 +8,33 @@ import { TOOLS, toolByName, type ToolContext } from "./tools";
 
 type Emit = (e: AgentEvent) => void;
 
+export const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
 export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
 const MAX_TURNS = 24;
 
+/** Which reasoning engine this deployment uses: Claude if keyed, else Gemini, else Autopilot. */
+export function llmProvider(): { name: "claude" | "gemini"; model: string } | null {
+  if (process.env.ANTHROPIC_API_KEY) return { name: "claude", model: CLAUDE_MODEL };
+  if (process.env.GEMINI_API_KEY) return { name: "gemini", model: GEMINI_MODEL };
+  return null;
+}
+
 const SYSTEM = `You are Roadie, an AI tour manager for independent acts (musicians, comedians, live podcasts) who can't afford a booking agent or a marketing team.
 
-You plan tours with Qloo's cultural taste graph, not guesswork. Every claim about where fans are, which venues fit, who to co-bill with, and which brands or media to pitch MUST come from your tools. Never invent venues, acts, brands, podcasts or scores. If a tool returns nothing, say so plainly.
+You plan tours with Qloo's cultural taste graph instead of guesswork. Every claim about where fans are, which venues fit, who to co-bill with, and which brands or media to pitch has to come from your tools; if a tool returns nothing, say so plainly rather than filling the gap.
 
-Standard workflow for a new tour:
-1. lookup_act with the act name and its "sounds like" references.
-2. profile_audience.
-3. score_markets (no cities argument scans the whole region).
-4. Choose the N best cities. Prefer high fan affinity, but keep the route sane: avoid a lone far-flung outlier unless its affinity is exceptional, and include the home city if given.
-5. scout_city for EACH chosen city (call them in parallel in one turn).
-6. find_openers and find_partners (parallel).
-7. plan_route with the chosen cities (start_city = home city if provided).
-8. finalize_plan: for each stop pick the venue, a support act, a local spot, and write a specific marketing angle that cites the evidence (e.g. a fan hotspot, a taste tag, a brand the fans love). Reference only ids from tool results.
-9. Reply with a concise markdown brief: tour headline, why these cities (with affinity numbers), the 3 smartest moves, and an honest "limits" line (Qloo measures aggregate taste affinity, not ticket demand or venue availability).
+How the tools fit together for a new tour:
+- lookup_act first (act name plus its "sounds like" acts), then profile_audience and score_markets (no cities argument scans the whole region).
+- Pick the cities: high fan index, a sensible route (a lone far-flung outlier needs an exceptional score), the home city if one is given.
+- scout_city for every chosen city in one turn, then find_openers and find_partners together.
+- plan_route with the chosen cities (start_city = home city when given), then finalize_plan. For each stop choose the venue, a support act and a local spot by id, and write a one-sentence marketing angle that names its evidence: a fan neighbourhood, a taste theme, a brand the fans over-index on. finalize_plan rejects ids that didn't come from a tool result.
+- Close with a short markdown brief: the tour headline, why these cities (cite fan index numbers), the three smartest moves, and one honest limits line (Qloo measures aggregate taste affinity, not ticket demand, capacity or availability).
 
-For follow-up requests, use only the tools needed, then re-run plan_route and finalize_plan if the itinerary changed. For writing tasks (pitch emails, social posts), use the board data in context and write directly.
-Be concise, warm, and practical. Use the act's real name.`;
+Room size matters: Qloo doesn't know capacities, so use the act's notes and popularity (brand-new acts belong in small rooms) when choosing between venues, and say what you assumed.
+
+For follow-ups, call only the tools the request needs; if the itinerary changes, re-run plan_route and finalize_plan. For writing tasks (booking emails, social posts, press pitches) write directly from the plan context, using real names from it.
+
+Be concise, warm and practical, and use the act's real name.`;
 
 function briefText(b: Brief) {
   const region = REGIONS.find((r) => r.id === b.region)?.label ?? b.region;
@@ -52,15 +60,17 @@ function boardContext(board: Board) {
       found: e(board.act.found),
       references: board.act.references.map(e),
     },
-    audience: board.audience && { age: board.audience.age, tags: board.audience.tasteTags.map((t) => t.name) },
-    top_markets: board.markets.slice(0, 12).map((m) => ({ city: m.city, affinity: Math.round(m.affinity * 1000) / 1000 })),
+    audience: board.audience && { age: board.audience.age, taste: board.audience.tasteTags.map((t) => t.name) },
+    top_markets: board.markets.slice(0, 12).map((m) => ({ city: m.city, fan_index: Math.round(m.affinity * 100) })),
     stops: board.stops.map((s) => ({
       order: s.order,
       city: s.city,
       date: s.date,
-      venue: e(s.venue),
+      venue: s.venue && { ...e(s.venue), address: s.venue.address },
       opener: e(s.opener),
       local_spot: e(s.hangout),
+      fan_neighbourhoods: board.scouts[s.city]?.hotspots.slice(0, 4).map((h) => h.name),
+      other_venues: board.scouts[s.city]?.venues.filter((v) => v.id !== s.venue?.id).slice(0, 4).map(e),
       angle: s.angle,
     })),
     scouted_cities: Object.keys(board.scouts),
@@ -71,10 +81,10 @@ function boardContext(board: Board) {
   });
 }
 
-async function runTool(ctx: ToolContext, call: FunctionCall, emit: Emit, callId: string) {
-  const tool = toolByName(call.name ?? "");
-  const args = (call.args ?? {}) as Record<string, unknown>;
-  if (!tool) return { error: `Unknown tool ${call.name}` };
+async function runTool(ctx: ToolContext, name: string, rawArgs: unknown, emit: Emit, callId: string) {
+  const tool = toolByName(name);
+  const args = rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs) ? (rawArgs as Record<string, unknown>) : {};
+  if (!tool) return { error: `Unknown tool ${name}` };
   emit({ type: "tool", id: callId, name: tool.name, args, label: tool.label(args) });
   try {
     const res = await tool.run(ctx, args);
@@ -95,13 +105,29 @@ export interface RunInput {
   message?: string;
 }
 
+/** The opening turns: a new brief, or (for follow-ups) the brief, the board and the chat so far. */
+function openingTurns(input: RunInput, board: Board): { role: "user" | "assistant"; text: string }[] {
+  if (!input.message) return [{ role: "user", text: briefText(input.brief) }];
+  const history = (input.history ?? []).slice(-8);
+  return [
+    {
+      role: "user",
+      text: `${briefText(input.brief)}\n\nCurrent plan board (from earlier tool calls):\n${boardContext(board)}`,
+    },
+    { role: "assistant", text: "Got it. I have the current plan loaded." },
+    ...history,
+    { role: "user", text: input.message },
+  ];
+}
+
 export async function runRoadie(input: RunInput, emit: Emit) {
   const session = new QlooSession((call) => emit({ type: "qloo", call }));
   const ctx: ToolContext = { session, board: input.board, actType: input.brief.actType };
   ctx.board.brief = input.brief;
   const mock = isMockMode();
+  const llm = llmProvider();
 
-  if (!process.env.GEMINI_API_KEY) {
+  if (!llm) {
     emit({ type: "status", mode: "autopilot", mock });
     if (input.message) {
       emit({ type: "message", text: "Follow-up chat needs the LLM, which isn't configured on this deployment. The plan above was built by Autopilot." });
@@ -111,67 +137,10 @@ export async function runRoadie(input: RunInput, emit: Emit) {
     return;
   }
 
-  emit({ type: "status", mode: "agent", mock, model: GEMINI_MODEL });
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  const contents: Content[] = [];
-  if (input.message) {
-    contents.push({
-      role: "user",
-      parts: [{ text: `${briefText(input.brief)}\n\nCurrent plan board (from earlier tool calls):\n${boardContext(ctx.board)}` }],
-    });
-    contents.push({ role: "model", parts: [{ text: "Got it. I have the current plan loaded." }] });
-    for (const h of (input.history ?? []).slice(-8)) {
-      contents.push({ role: h.role === "user" ? "user" : "model", parts: [{ text: h.text }] });
-    }
-    contents.push({ role: "user", parts: [{ text: input.message }] });
-  } else {
-    contents.push({ role: "user", parts: [{ text: briefText(input.brief) }] });
-  }
-
-  let seq = 0;
+  emit({ type: "status", mode: "agent", mock, model: llm.model });
   try {
-    for (let turn = 0; turn < MAX_TURNS; turn++) {
-      const res = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents,
-        config: {
-          systemInstruction: SYSTEM,
-          temperature: 0.4,
-          tools: [
-            {
-              functionDeclarations: TOOLS.map((t) => ({
-                name: t.name,
-                description: t.description,
-                parametersJsonSchema: t.parameters,
-              })),
-            },
-          ],
-        },
-      });
-      const content = res.candidates?.[0]?.content;
-      if (!content?.parts?.length) throw new Error("The model returned an empty response.");
-      contents.push(content);
-
-      const calls = content.parts.filter((p) => p.functionCall).map((p) => p.functionCall!);
-      const text = content.parts
-        .filter((p) => p.text && !p.thought)
-        .map((p) => p.text)
-        .join("")
-        .trim();
-
-      if (!calls.length) {
-        emit({ type: "message", text: text || "Done." });
-        return;
-      }
-      if (text) emit({ type: "thought", text });
-
-      const results = await Promise.all(calls.map((c) => runTool(ctx, c, emit, `t${++seq}`)));
-      const parts: Part[] = calls.map((c, i) => ({
-        functionResponse: { id: c.id, name: c.name, response: { result: results[i] } },
-      }));
-      contents.push({ role: "user", parts });
-    }
-    emit({ type: "message", text: "I hit my step limit. Here's the plan as it stands; ask me to continue any part of it." });
+    if (llm.name === "claude") await runClaude(ctx, input, emit);
+    else await runGemini(ctx, input, emit);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (input.message) {
@@ -184,12 +153,147 @@ export async function runRoadie(input: RunInput, emit: Emit) {
   }
 }
 
+/** Claude agent loop: streaming, parallel tool calls, server-side refusal fallback. */
+async function runClaude(ctx: ToolContext, input: RunInput, emit: Emit) {
+  const client = new Anthropic();
+  const tools: Anthropic.Beta.BetaTool[] = TOOLS.map((t) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.parameters as Anthropic.Beta.BetaTool.InputSchema,
+    eager_input_streaming: true,
+  }));
+  const messages: Anthropic.Beta.BetaMessageParam[] = openingTurns(input, ctx.board).map((t) => ({
+    role: t.role,
+    content: t.text,
+  }));
+
+  let jsonRetries = 0;
+  for (let turn = 0; turn < MAX_TURNS; turn++) {
+    const stream = client.beta.messages.stream({
+      model: CLAUDE_MODEL,
+      max_tokens: 32000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      cache_control: { type: "ephemeral" },
+      system: SYSTEM,
+      tools,
+      thinking: { type: "adaptive", display: "summarized" },
+      output_config: { effort: "medium" },
+      messages,
+    });
+    stream.on("text", (delta) => emit({ type: "delta", text: delta }));
+
+    let message: Anthropic.Beta.BetaMessage;
+    try {
+      message = await stream.finalMessage();
+      jsonRetries = 0;
+    } catch (err) {
+      // Only an unparseable streamed tool input is retried; API errors propagate.
+      if (err instanceof Anthropic.APIError || jsonRetries++ >= 2) throw err;
+      continue;
+    }
+
+    if (message.stop_reason === "refusal") {
+      emit({ type: "error", text: "The model declined this request. Try rephrasing it." });
+      return;
+    }
+    for (const block of message.content) {
+      if (block.type === "thinking" && block.thinking.trim()) emit({ type: "thought", text: block.thinking.trim() });
+    }
+    const text = message.content
+      .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim();
+    const toolUses = message.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
+
+    if (message.stop_reason === "pause_turn") {
+      messages.push({ role: "assistant", content: message.content });
+      continue;
+    }
+    if (!toolUses.length) {
+      emit({ type: "message", text: text || "Done." });
+      return;
+    }
+    if (message.stop_reason === "max_tokens") throw new Error("A tool call was cut off at max_tokens.");
+    if (text) emit({ type: "thought", text });
+
+    messages.push({ role: "assistant", content: message.content });
+    const results = await Promise.all(toolUses.map((tu) => runTool(ctx, tu.name, tu.input, emit, tu.id)));
+    messages.push({
+      role: "user",
+      content: toolUses.map((tu, i) => {
+        const r = results[i] as { error?: unknown } | undefined;
+        return {
+          type: "tool_result" as const,
+          tool_use_id: tu.id,
+          content: JSON.stringify(results[i] ?? null),
+          ...(r && typeof r === "object" && "error" in r ? { is_error: true } : {}),
+        };
+      }),
+    });
+  }
+  emit({ type: "message", text: "I hit my step limit. Here's the plan as it stands; ask me to continue any part of it." });
+}
+
+/** Gemini agent loop (alternative engine when only GEMINI_API_KEY is set). */
+async function runGemini(ctx: ToolContext, input: RunInput, emit: Emit) {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const contents: Content[] = openingTurns(input, ctx.board).map((t) => ({
+    role: t.role === "user" ? "user" : "model",
+    parts: [{ text: t.text }],
+  }));
+
+  for (let turn = 0; turn < MAX_TURNS; turn++) {
+    const res = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents,
+      config: {
+        systemInstruction: SYSTEM,
+        temperature: 0.4,
+        tools: [
+          {
+            functionDeclarations: TOOLS.map((t) => ({
+              name: t.name,
+              description: t.description,
+              parametersJsonSchema: t.parameters,
+            })),
+          },
+        ],
+      },
+    });
+    const content = res.candidates?.[0]?.content;
+    if (!content?.parts?.length) throw new Error("The model returned an empty response.");
+    contents.push(content);
+
+    const calls = content.parts.filter((p) => p.functionCall).map((p) => p.functionCall!);
+    const text = content.parts
+      .filter((p) => p.text && !p.thought)
+      .map((p) => p.text)
+      .join("")
+      .trim();
+
+    if (!calls.length) {
+      emit({ type: "message", text: text || "Done." });
+      return;
+    }
+    if (text) emit({ type: "thought", text });
+
+    const results = await Promise.all(calls.map((c, i) => runTool(ctx, c.name ?? "", c.args, emit, `g${turn}-${i}`)));
+    const parts: Part[] = calls.map((c, i) => ({
+      functionResponse: { id: c.id, name: c.name, response: { result: results[i] } },
+    }));
+    contents.push({ role: "user", parts });
+  }
+  emit({ type: "message", text: "I hit my step limit. Here's the plan as it stands; ask me to continue any part of it." });
+}
+
 /** Deterministic fallback: same tools, fixed order, template copy. */
 async function autopilot(ctx: ToolContext, emit: Emit) {
   const b = ctx.board.brief!;
   let seq = 100;
   const call = (name: string, args: Record<string, unknown> = {}) =>
-    runTool(ctx, { name, args }, emit, `a${++seq}`) as Promise<Record<string, unknown>>;
+    runTool(ctx, name, args, emit, `a${++seq}`) as Promise<Record<string, unknown>>;
 
   if (!ctx.board.act?.signalIds.length) {
     const r = await call("lookup_act", { act_name: b.actName, sounds_like: b.soundsLike });

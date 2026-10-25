@@ -99,7 +99,7 @@ export default function RoadieApp() {
       <div className="no-print grid min-h-0 flex-1 lg:grid-cols-[400px_1fr]">
         <aside className="no-print order-2 flex h-[70vh] min-w-0 flex-col border-t border-line p-4 lg:order-1 lg:h-auto lg:min-h-0 lg:border-r lg:border-t-0">
           <h2 className="mb-3 text-xs uppercase tracking-widest text-muted">Agent activity</h2>
-          <AgentFeed feed={r.feed} running={r.running} onAsk={r.ask} canChat={!r.running || r.feed.length > 0} />
+          <AgentFeed feed={r.feed} running={r.running} live={r.live} onAsk={r.ask} canChat={!r.running || r.feed.length > 0} />
         </aside>
 
         <main className="order-1 flex min-h-0 min-w-0 flex-col lg:order-2">

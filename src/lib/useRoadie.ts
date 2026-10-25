@@ -21,6 +21,8 @@ export function useRoadie() {
   const [calls, setCalls] = useState<QlooCallView[]>([]);
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState<RunStatus>({});
+  /** Assistant text streaming in right now; becomes a thought (before tools) or the final message. */
+  const [live, setLive] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const boardRef = useRef<Board>(board);
 
@@ -30,9 +32,14 @@ export function useRoadie() {
         setStatus({ mode: e.mode, mock: e.mock, model: e.model });
         break;
       case "thought":
+        setLive("");
         setFeed((f) => [...f, { kind: "thought", text: e.text }]);
         break;
+      case "delta":
+        setLive((t) => t + e.text);
+        break;
       case "tool":
+        setLive("");
         setFeed((f) => [...f, { kind: "tool", id: e.id, name: e.name, label: e.label, status: "running" }]);
         break;
       case "tool_done":
@@ -50,9 +57,11 @@ export function useRoadie() {
         setBoard(e.board);
         break;
       case "message":
+        setLive("");
         setFeed((f) => [...f, { kind: "message", role: "assistant", text: e.text }]);
         break;
       case "error":
+        setLive("");
         setFeed((f) => [...f, { kind: "error", text: e.text }]);
         break;
     }
@@ -99,7 +108,10 @@ export function useRoadie() {
       } catch (err) {
         if ((err as Error).name !== "AbortError") handle({ type: "error", text: "Connection lost. Please try again." });
       } finally {
-        if (abortRef.current === ctrl) setRunning(false);
+        if (abortRef.current === ctrl) {
+          setRunning(false);
+          setLive("");
+        }
       }
     },
     [handle],
@@ -140,5 +152,5 @@ export function useRoadie() {
     setStatus({});
   }, []);
 
-  return { brief, board, feed, calls, running, status, start, ask, reset };
+  return { brief, board, feed, calls, running, status, live, start, ask, reset };
 }

@@ -14,11 +14,13 @@ const SUGGESTIONS = [
 export function AgentFeed({
   feed,
   running,
+  live,
   onAsk,
   canChat,
 }: {
   feed: FeedItem[];
   running: boolean;
+  live?: string;
   onAsk: (q: string) => void;
   canChat: boolean;
 }) {
@@ -27,7 +29,7 @@ export function AgentFeed({
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [feed.length, running]);
+  }, [feed.length, running, live]);
 
   const send = (q: string) => {
     if (!q.trim() || running) return;
@@ -59,9 +61,9 @@ export function AgentFeed({
             );
           if (it.kind === "thought")
             return (
-              <p key={i} className="px-1 text-sm italic text-muted">
-                {it.text}
-              </p>
+              <details key={i} className="group px-1 text-sm italic text-muted">
+                <summary className="line-clamp-3 cursor-pointer list-none group-open:line-clamp-none">{it.text}</summary>
+              </details>
             );
           if (it.kind === "error")
             return (
@@ -82,7 +84,15 @@ export function AgentFeed({
             </div>
           );
         })}
-        {running && (
+        {live && (
+          <div className="rounded-xl rounded-bl-sm border border-amber/30 bg-panel-2 px-3.5 py-3">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs uppercase tracking-widest text-amber">
+              <Sparkles size={12} /> Roadie
+            </div>
+            <Markdown text={live} />
+          </div>
+        )}
+        {running && !live && (
           <div className="flex items-center gap-2 px-1 text-xs text-muted">
             <span className="pulse-dot inline-block h-2 w-2 rounded-full bg-amber" /> Roadie is working…
           </div>
