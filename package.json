@@ -2,6 +2,22 @@
   "name": "roadie",
   "version": "0.1.0",
   "private": true,
+  "description": "AI tour manager for independent artists: a Gemini agent that uses Qloo's Taste AI to find where fans are, which venues to play, who to tour with and which brands to pitch.",
+  "license": "MIT",
+  "author": "Sanjay Saini",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sanjaysaini383/Qloo.git"
+  },
+  "keywords": [
+    "qloo",
+    "ai-agent",
+    "gemini",
+    "nextjs",
+    "music",
+    "touring",
+    "hackathon"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
