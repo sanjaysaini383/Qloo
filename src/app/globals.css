@@ -1,54 +1,191 @@
 @import "tailwindcss";
 
+/* Dark "frosted glass" theme. Surfaces are translucent white over an ambient backdrop.
+   Token names follow shadcn/ui, so its components drop in without edits. */
 @theme {
-  --color-ink: #0b0b10;
-  --color-panel: #13131b;
-  --color-panel-2: #1b1b26;
-  --color-line: #2a2a38;
-  --color-muted: #9a9ab0;
-  --color-text: #ececf3;
-  --color-amber: #ffb547;
-  --color-pink: #ff5c8a;
-  --color-teal: #3ad6c5;
-  --font-display: var(--font-anton), "Impact", sans-serif;
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-mono-jb), ui-monospace, monospace;
+  --color-background: #07080d;
+  --color-foreground: #ececf1;
+  --color-card: rgb(255 255 255 / 0.04);
+  --color-card-foreground: #ececf1;
+  --color-popover: rgb(16 18 27 / 0.92);
+  --color-popover-foreground: #ececf1;
+  --color-primary: #f6b649;
+  --color-primary-foreground: #1b1304;
+  --color-secondary: rgb(255 255 255 / 0.06);
+  --color-secondary-foreground: #ececf1;
+  --color-muted-foreground: #8f93a3;
+  --color-accent: rgb(255 255 255 / 0.08);
+  --color-accent-foreground: #ffffff;
+  --color-destructive: #f43f5e;
+  --color-border: rgb(255 255 255 / 0.08);
+  --color-input: rgb(255 255 255 / 0.1);
+  --color-ring: rgb(246 182 73 / 0.55);
+
+  /* Legacy names, kept until every component has moved to the tokens above. */
+  --color-ink: #07080d;
+  --color-panel: #0f1118;
+  --color-panel-2: #161925;
+  --color-line: rgb(255 255 255 / 0.1);
+  --color-muted: #8f93a3;
+  --color-text: #ececf1;
+  --color-amber: #f6b649;
+  --color-pink: #fb7185;
+  --color-teal: #2dd4bf;
+  --font-display: var(--font-instrument), ui-serif, Georgia, serif;
+
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-instrument), ui-serif, Georgia, serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --animate-fade-in: fade-in 0.2s ease-out;
+  --animate-fade-out: fade-out 0.15s ease-in;
+  --animate-pop-in: pop-in 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-pop-out: pop-out 0.12s ease-in;
+  --animate-sheet-up: sheet-up 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-sheet-down: sheet-down 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.97);
+    }
+  }
+  @keyframes pop-out {
+    to {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+  }
+  @keyframes sheet-up {
+    from {
+      transform: translateY(100%);
+    }
+  }
+  @keyframes sheet-down {
+    to {
+      transform: translateY(100%);
+    }
+  }
 }
 
-html,
-body {
-  background: var(--color-ink);
-  color: var(--color-text);
+/* Panels: blurred, with a hairline border and a faint top highlight. */
+@utility glass {
+  background-color: rgb(255 255 255 / 0.035);
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0) 120px);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 24px 48px -28px rgb(0 0 0 / 0.7);
+  backdrop-filter: blur(24px) saturate(150%);
+}
+
+/* Floating layers (popovers, sheets, sticky bars): denser so text underneath can't bleed through. */
+@utility glass-strong {
+  background-color: rgb(13 15 23 / 0.82);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 24px 60px -20px rgb(0 0 0 / 0.75);
+  backdrop-filter: blur(28px) saturate(160%);
+}
+
+/* Blocks nested inside a glass panel: no second blur, which is costly and muddies the layer. */
+@utility surface {
+  background-color: rgb(255 255 255 / 0.025);
+  border: 1px solid rgb(255 255 255 / 0.06);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+html {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  color-scheme: dark;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
 }
 
 ::selection {
-  background: var(--color-amber);
-  color: var(--color-ink);
+  background: rgb(246 182 73 / 0.85);
+  color: var(--color-primary-foreground);
 }
 
-.stage-glow {
+/* Ambient light behind the glass. Fixed so panels blur the same backdrop while scrolling. */
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background:
-    radial-gradient(60% 50% at 15% 0%, rgba(255, 181, 71, 0.16), transparent 70%),
-    radial-gradient(50% 40% at 90% 10%, rgba(255, 92, 138, 0.14), transparent 70%),
-    var(--color-ink);
+    radial-gradient(52rem 36rem at 6% -14%, rgb(246 182 73 / 0.13), transparent 62%),
+    radial-gradient(48rem 36rem at 102% -6%, rgb(99 102 241 / 0.17), transparent 62%),
+    radial-gradient(44rem 32rem at 62% 118%, rgb(45 212 191 / 0.08), transparent 60%),
+    var(--color-background);
 }
 
-.ticket {
-  background: linear-gradient(180deg, var(--color-panel-2), var(--color-panel));
-  border: 1px solid var(--color-line);
+.ambient::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 .scroll-thin {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-line) transparent;
+  scrollbar-color: rgb(255 255 255 / 0.12) transparent;
+}
+
+.shimmer-text {
+  background: linear-gradient(90deg, var(--color-muted-foreground) 0%, var(--color-foreground) 50%, var(--color-muted-foreground) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2.2s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* ---- legacy component classes (removed as components move to the glass theme) ---- */
+
+.stage-glow {
+  background: transparent;
+}
+
+.ticket {
+  background: rgb(255 255 255 / 0.03);
+  border: 1px solid rgb(255 255 255 / 0.08);
 }
 
 .leaflet-container {
-  background: #0e0e14;
+  background: #0b0d14;
   font-family: var(--font-sans);
 }
 
@@ -60,7 +197,7 @@ body {
 }
 
 .leaflet-control-attribution {
-  background: rgba(11, 11, 16, 0.7) !important;
+  background: rgba(7, 8, 13, 0.7) !important;
   color: var(--color-muted) !important;
 }
 
@@ -79,7 +216,7 @@ body {
   font-weight: 800;
   font-size: 13px;
   border: 2px solid var(--color-ink);
-  box-shadow: 0 0 0 3px rgba(255, 181, 71, 0.35);
+  box-shadow: 0 0 0 3px rgba(246, 182, 73, 0.35);
 }
 
 @keyframes pulse-dot {
@@ -116,7 +253,8 @@ body {
   .ticket {
     break-inside: avoid;
   }
-  .no-print {
+  .no-print,
+  .ambient {
     display: none !important;
   }
   html,
