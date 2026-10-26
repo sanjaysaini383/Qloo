@@ -3,7 +3,7 @@ import * as React from "react";
 import { Slider as SliderPrimitive } from "radix-ui";
 import { cn } from "@/lib/utils";
 
-function Slider({ className, ...props }: React.ComponentProps<typeof SliderPrimitive.Root>) {
+function Slider({ className, "aria-label": label, ...props }: React.ComponentProps<typeof SliderPrimitive.Root>) {
   return (
     <SliderPrimitive.Root
       data-slot="slider"
@@ -14,7 +14,7 @@ function Slider({ className, ...props }: React.ComponentProps<typeof SliderPrimi
         <SliderPrimitive.Range className="absolute h-full rounded-full bg-primary" />
       </SliderPrimitive.Track>
       <SliderPrimitive.Thumb
-        aria-label="Value"
+        aria-label={label}
         className="block size-5 cursor-grab rounded-full border-2 border-primary bg-background shadow-[0_0_0_4px_rgb(246_182_73/0.15)] outline-none transition-shadow focus-visible:shadow-[0_0_0_6px_rgb(246_182_73/0.3)] active:cursor-grabbing"
       />
     </SliderPrimitive.Root>

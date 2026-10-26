@@ -3,7 +3,9 @@ import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Bot, Database, Printer } from "lucide-react";
 import { useRoadie } from "@/lib/useRoadie";
-import { BriefForm, PRESETS, nextMonthStart } from "./BriefForm";
+import { PRESETS, nextMonthStart } from "./BriefForm";
+import { Landing } from "./Landing";
+import { Logo } from "./Logo";
 import { AgentFeed } from "./AgentFeed";
 import { Audience, Itinerary, MarketScan, Partners, Receipts } from "./panels";
 
@@ -14,16 +16,6 @@ const TourMap = dynamic(() => import("./TourMap"), {
 
 const TABS = ["Tour", "Audience", "Partners", "Market scan", "Receipts"] as const;
 type Tab = (typeof TABS)[number];
-
-const REPO = "https://github.com/sanjaysaini383/Qloo";
-
-function Logo() {
-  return (
-    <span className="font-display text-2xl uppercase tracking-wider">
-      Road<span className="text-amber">ie</span>
-    </span>
-  );
-}
 
 export default function RoadieApp() {
   const r = useRoadie();
@@ -139,90 +131,6 @@ export default function RoadieApp() {
         <Audience board={r.board} />
         <p className="text-xs">Planned with Roadie using Qloo taste data. Affinity reflects aggregate audience taste, not ticket demand.</p>
       </div>
-    </div>
-  );
-}
-
-function Landing({ env, onStart }: { env: { qloo: string; llm: string | null } | null; onStart: Parameters<typeof BriefForm>[0]["onSubmit"] }) {
-  return (
-    <div className="stage-glow min-h-screen">
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5">
-        <Logo />
-        <a href={REPO} className="text-sm text-muted hover:text-text" target="_blank" rel="noreferrer">
-          GitHub
-        </a>
-      </header>
-
-      <section className="mx-auto grid max-w-6xl items-start gap-10 px-4 pb-16 pt-6 lg:grid-cols-[1.1fr_1fr] lg:pt-12">
-        <div>
-          <p className="mb-3 text-xs uppercase tracking-[0.3em] text-amber">AI tour manager · powered by Qloo taste AI</p>
-          <h1 className="font-display text-5xl uppercase leading-[0.95] sm:text-6xl">
-            Your fans are out there.
-            <br />
-            <span className="text-amber">Roadie knows where.</span>
-          </h1>
-          <p className="mt-5 max-w-xl text-lg text-text/80">
-            Most independent acts book tours on gut feel and a spreadsheet. Roadie is an agent that reads Qloo&apos;s cultural taste graph to find the cities where your
-            audience over-indexes, the venues and neighbourhoods they actually go to, support acts who share your fans, and the brands and podcasts worth pitching.
-          </p>
-          <ul className="mt-6 grid max-w-xl gap-3 text-sm sm:grid-cols-2">
-            {[
-              ["Market scan", "Every city in a region ranked by your fans' affinity."],
-              ["City scouting", "Fan hotspot heatmaps, taste-matched venues, local hangouts."],
-              ["Co-bills & partners", "Bookable support acts, brands and podcasts your fans love."],
-              ["Routed itinerary", "Travel-optimised dates, angles per city, and an agent you can talk to."],
-            ].map(([t, d]) => (
-              <li key={t} className="rounded-xl border border-line/70 bg-panel/60 p-3">
-                <div className="font-semibold">{t}</div>
-                <div className="text-muted">{d}</div>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-6 max-w-xl text-sm text-muted">
-            <strong className="text-text">New act, not in any database yet?</strong> Tell Roadie who you sound like. It models your future fans through the acts they
-            already love.
-          </p>
-        </div>
-
-        <div>
-          <BriefForm onSubmit={onStart} />
-          {env && (
-            <p className="mt-3 text-center text-xs text-muted">
-              {env.qloo === "live" ? "Connected to live Qloo data" : "Running on fictional demo data (no Qloo key configured)"} ·{" "}
-              {env.llm ? `Agent: ${env.llm}` : "Autopilot planner (no LLM key)"}
-            </p>
-          )}
-        </div>
-      </section>
-
-      <section className="border-t border-line/60 bg-ink/60">
-        <div className="mx-auto grid max-w-6xl gap-8 px-4 py-14 lg:grid-cols-3">
-          <div>
-            <h2 className="font-display text-3xl uppercase">Why a plain LLM can&apos;t do this</h2>
-            <p className="mt-3 text-sm text-muted">
-              Ask a chatbot where an indie band should tour and you get the same ten big cities for everyone. It has no idea that your particular fans over-index in
-              Minneapolis and not in Miami, which rooms they go to, or which brand they&apos;d trust.
-            </p>
-          </div>
-          <div className="lg:col-span-2 grid gap-3 sm:grid-cols-2">
-            {[
-              ["Grounded, not guessed", "Every city score, venue, support act and brand comes from a Qloo API call you can inspect in the Receipts tab."],
-              ["Guard-railed agent", "The final plan is validated server-side: the agent can only pick venues, acts and brands that Qloo actually returned."],
-              ["Cross-domain taste", "Qloo links music to food, fashion, TV and podcasts, so Roadie can suggest the taproom for the meet-up and the podcast for the pre-tour interview."],
-              ["Privacy-safe", "Only public act names go to Qloo. Results describe aggregate audience affinity, never individuals."],
-            ].map(([t, d]) => (
-              <div key={t} className="ticket rounded-xl p-4">
-                <div className="font-semibold text-amber">{t}</div>
-                <p className="mt-1 text-sm text-text/80">{d}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <footer className="mx-auto max-w-6xl px-4 py-8 text-xs text-muted">
-        Built for the Qloo Agentic Hackathon. Taste data © Qloo. Basemap © Esri, © OpenStreetMap contributors. Open source under the MIT license.
-      </footer>
     </div>
   );
 }

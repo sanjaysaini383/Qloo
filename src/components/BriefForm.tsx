@@ -1,14 +1,25 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Mic, Music2, Radio, Sparkles, X } from "lucide-react";
+import { motion } from "framer-motion";
+import { ArrowRight, Mic, Music2, Radio, X } from "lucide-react";
 import { MARKETS, REGIONS, type RegionId } from "@/lib/markets";
 import type { ActType, Brief } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
+import { Input, Textarea, fieldClass } from "./ui/input";
+import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Slider } from "./ui/slider";
 
 const TYPES: { id: ActType; label: string; icon: typeof Music2 }[] = [
   { id: "musician", label: "Musician", icon: Music2 },
   { id: "comedian", label: "Comedian", icon: Mic },
   { id: "podcast", label: "Live podcast", icon: Radio },
 ];
+
+/** Radix Select reserves "" for "no value", so the optional home city uses a sentinel. */
+const NO_CITY = "none";
 
 /** First day of the month after next, in UTC so the server render and the browser agree. */
 export function nextMonthStart() {
@@ -125,164 +136,193 @@ export function BriefForm({ onSubmit, disabled }: { onSubmit: (b: Brief) => void
     });
   };
 
-  const field = "w-full rounded-lg border border-line bg-ink/60 px-3 py-2.5 text-sm outline-none focus:border-amber";
-
   return (
-    <form onSubmit={submit} className="ticket rounded-2xl p-5 sm:p-6 space-y-4 shadow-2xl shadow-black/40">
-      <div className="flex flex-wrap gap-2">
-        <span className="text-xs uppercase tracking-widest text-muted self-center mr-1">Try</span>
-        {PRESETS.map((p) => (
-          <button
-            key={p.label}
-            type="button"
-            onClick={() => applyPreset(p)}
-            className="rounded-full border border-line px-3 py-1 text-xs text-muted hover:border-amber hover:text-amber transition"
-          >
-            {p.label}
-          </button>
-        ))}
+    <Card className="p-5 sm:p-7">
+      <div className="mb-5">
+        <h2 className="font-serif text-3xl leading-none tracking-tight">Plan a tour</h2>
+        <p className="mt-2 text-sm text-muted-foreground">Describe the act. Roadie does the market research.</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Act type">
-        {TYPES.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="radio"
-            aria-checked={actType === t.id}
-            onClick={() => setActType(t.id)}
-            className={`flex items-center justify-center gap-2 rounded-lg border px-2 py-2.5 text-sm transition ${
-              actType === t.id ? "border-amber bg-amber/10 text-amber" : "border-line text-muted hover:text-text"
-            }`}
-          >
-            <t.icon size={16} /> {t.label}
-          </button>
-        ))}
+      <div className="mb-6">
+        <p className="text-xs font-medium text-muted-foreground">Start from an example</p>
+        <div className="no-scrollbar -mx-5 mt-2 flex gap-2 overflow-x-auto px-5 sm:mx-0 sm:flex-wrap sm:px-0">
+          {PRESETS.map((p) => (
+            <Button key={p.label} type="button" variant="secondary" size="sm" className="rounded-full" onClick={() => applyPreset(p)}>
+              {p.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
-      <div className="relative">
-        <label className="text-xs uppercase tracking-widest text-muted">Your act</label>
-        <input
-          className={`${field} mt-1`}
-          value={actName}
-          onChange={(e) => setActName(e.target.value)}
-          onFocus={() => setFocus(true)}
-          onBlur={() => setTimeout(() => setFocus(false), 150)}
-          placeholder="Band, comic or show name"
-          required
-          maxLength={80}
-        />
-        {focus && suggest.length > 0 && actName.length >= 2 && (
-          <ul className="absolute z-20 mt-1 w-full rounded-lg border border-line bg-panel-2 shadow-xl">
-            {suggest.map((s) => (
-              <li key={s.id}>
+      <form onSubmit={submit} className="space-y-5">
+        <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/6 bg-black/25 p-1" role="radiogroup" aria-label="Act type">
+          {TYPES.map((t) => {
+            const on = actType === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => setActType(t.id)}
+                className={cn(
+                  "relative flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg text-[13px] font-medium transition-colors sm:text-sm",
+                  on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {on && (
+                  <motion.span
+                    layoutId="act-type"
+                    className="absolute inset-0 rounded-lg border border-white/10 bg-white/10 shadow-sm"
+                    transition={{ type: "spring", bounce: 0.18, duration: 0.45 }}
+                  />
+                )}
+                <t.icon className={cn("relative size-4 max-sm:hidden", on && "text-primary")} />
+                <span className="relative">{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="relative space-y-2">
+          <Label htmlFor="act-name">Your act</Label>
+          <Input
+            id="act-name"
+            value={actName}
+            onChange={(e) => setActName(e.target.value)}
+            onFocus={() => setFocus(true)}
+            onBlur={() => setTimeout(() => setFocus(false), 150)}
+            placeholder="Band, comic or show name"
+            autoComplete="off"
+            required
+            maxLength={80}
+          />
+          {focus && suggest.length > 0 && actName.length >= 2 && (
+            <ul className="glass-strong absolute z-20 mt-1 w-full animate-pop-in overflow-hidden rounded-xl p-1">
+              {suggest.map((s) => (
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    onMouseDown={() => {
+                      setActName(s.name);
+                      setSuggest([]);
+                    }}
+                    className="w-full cursor-pointer truncate rounded-lg px-2.5 py-2 text-left text-sm hover:bg-white/8"
+                  >
+                    {s.name} {s.about && <span className="text-xs text-muted-foreground">· {s.about}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="sounds-like">
+            Sounds like / shares fans with <span className="font-normal text-muted-foreground/70">· key for new acts</span>
+          </Label>
+          <div className={cn(fieldClass, "flex min-h-10 flex-wrap items-center gap-1.5 px-2 py-1.5 focus-within:border-primary/60 focus-within:ring-4 focus-within:ring-primary/10")}>
+            {soundsLike.map((s) => (
+              <span key={s} className="flex items-center gap-1 rounded-md border border-white/8 bg-white/8 py-0.5 pr-1 pl-2 text-xs">
+                {s}
                 <button
                   type="button"
-                  onMouseDown={() => {
-                    setActName(s.name);
-                    setSuggest([]);
-                  }}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-ink/60"
+                  aria-label={`Remove ${s}`}
+                  className="grid size-4 cursor-pointer place-items-center rounded text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                  onClick={() => setSoundsLike(soundsLike.filter((x) => x !== s))}
                 >
-                  {s.name} {s.about && <span className="text-muted text-xs">· {s.about}</span>}
+                  <X className="size-3" />
                 </button>
-              </li>
+              </span>
             ))}
-          </ul>
-        )}
-      </div>
+            <input
+              id="sounds-like"
+              className="h-6 min-w-32 flex-1 bg-transparent px-1.5 text-sm outline-none placeholder:text-muted-foreground/70"
+              value={refDraft}
+              onChange={(e) => setRefDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === ",") {
+                  e.preventDefault();
+                  addRef(refDraft);
+                }
+              }}
+              onBlur={() => refDraft && addRef(refDraft)}
+              placeholder={soundsLike.length >= 5 ? "" : "Type an act, press Enter"}
+              disabled={soundsLike.length >= 5}
+            />
+          </div>
+        </div>
 
-      <div>
-        <label className="text-xs uppercase tracking-widest text-muted">
-          Sounds like / shares fans with <span className="normal-case tracking-normal">(key for new acts)</span>
-        </label>
-        <div className={`${field} mt-1 flex flex-wrap items-center gap-1.5`}>
-          {soundsLike.map((s) => (
-            <span key={s} className="flex items-center gap-1 rounded-md bg-panel-2 px-2 py-0.5 text-xs">
-              {s}
-              <button type="button" aria-label={`Remove ${s}`} onClick={() => setSoundsLike(soundsLike.filter((x) => x !== s))}>
-                <X size={12} />
-              </button>
-            </span>
-          ))}
-          <input
-            className="min-w-[8rem] flex-1 bg-transparent outline-none"
-            value={refDraft}
-            onChange={(e) => setRefDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === ",") {
-                e.preventDefault();
-                addRef(refDraft);
-              }
-            }}
-            onBlur={() => refDraft && addRef(refDraft)}
-            placeholder={soundsLike.length >= 5 ? "" : "Type an act, press Enter"}
-            disabled={soundsLike.length >= 5}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Region</Label>
+            <Select
+              value={region}
+              onValueChange={(v) => {
+                setRegion(v as RegionId);
+                setHomeCity("");
+              }}
+            >
+              <SelectTrigger aria-label="Region">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REGIONS.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>
+              Home city <span className="font-normal text-muted-foreground/70">· optional</span>
+            </Label>
+            <Select value={homeCity || NO_CITY} onValueChange={(v) => setHomeCity(v === NO_CITY ? "" : v)}>
+              <SelectTrigger aria-label="Home city">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_CITY}>None</SelectItem>
+                {cities.map((c) => (
+                  <SelectItem key={c.city} value={c.city}>
+                    {c.city}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="justify-between">
+              Shows <span className="font-mono text-foreground tabular-nums">{shows}</span>
+            </Label>
+            <div className="flex h-10 items-center">
+              <Slider min={3} max={10} step={1} value={[shows]} onValueChange={([v]) => setShows(v)} aria-label="Number of shows" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="start-date">First show</Label>
+            <Input id="start-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="notes">Anything Roadie should know?</Label>
+          <Textarea
+            id="notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            maxLength={500}
+            placeholder="Room sizes, budget, must-play cities…"
           />
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs uppercase tracking-widest text-muted">Region</label>
-          <select
-            className={`${field} mt-1`}
-            value={region}
-            onChange={(e) => {
-              setRegion(e.target.value as RegionId);
-              setHomeCity("");
-            }}
-          >
-            {REGIONS.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="text-xs uppercase tracking-widest text-muted">Home city (optional)</label>
-          <select className={`${field} mt-1`} value={homeCity} onChange={(e) => setHomeCity(e.target.value)}>
-            <option value="">None</option>
-            {cities.map((c) => (
-              <option key={c.city}>{c.city}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="text-xs uppercase tracking-widest text-muted">Shows: {shows}</label>
-          <input
-            type="range"
-            min={3}
-            max={10}
-            value={shows}
-            onChange={(e) => setShows(Number(e.target.value))}
-            className="mt-3 w-full accent-[var(--color-amber)]"
-          />
-        </div>
-        <div>
-          <label className="text-xs uppercase tracking-widest text-muted">First show</label>
-          <input type="date" className={`${field} mt-1`} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-        </div>
-      </div>
-
-      <div>
-        <label className="text-xs uppercase tracking-widest text-muted">Anything Roadie should know?</label>
-        <textarea
-          className={`${field} mt-1 h-16 resize-none`}
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          maxLength={500}
-          placeholder="Room sizes, budget, must-play cities…"
-        />
-      </div>
-
-      <button
-        disabled={disabled || !actName.trim()}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber py-3 font-semibold text-ink transition hover:brightness-110 disabled:opacity-50"
-      >
-        <Sparkles size={18} /> Plan my tour
-      </button>
-    </form>
+        <Button type="submit" size="lg" className="group w-full" disabled={disabled || !actName.trim()}>
+          Plan my tour
+          <ArrowRight className="transition-transform group-hover:translate-x-0.5" />
+        </Button>
+      </form>
+    </Card>
   );
 }
