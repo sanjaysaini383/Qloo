@@ -1,5 +1,8 @@
 # Roadie: the AI tour manager with taste
 
+[![CI](https://github.com/sanjaysaini383/Qloo/actions/workflows/ci.yml/badge.svg)](https://github.com/sanjaysaini383/Qloo/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Roadie is an agent that plans tours for independent musicians, comedians and live podcasts using Qloo's cultural taste graph.** Give it your act (or, if you're brand new, the acts you sound like) and it works out which cities your fans are in, which neighbourhoods they cluster in, which rooms suit you, who to co-bill with, which brands and podcasts to pitch, and the shortest route that ties it all together. Then you can keep talking to it.
 
 > **Live demo:** _add your deployment URL here_
