@@ -10,8 +10,8 @@ function inline(text: string): ReactNode[] {
   while ((m = re.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
     const t = m[0];
-    if (t.startsWith("**")) out.push(<strong key={k++} className="text-text">{t.slice(2, -2)}</strong>);
-    else if (t.startsWith("`")) out.push(<code key={k++} className="rounded bg-ink px-1 font-mono text-xs">{t.slice(1, -1)}</code>);
+    if (t.startsWith("**")) out.push(<strong key={k++} className="font-semibold text-foreground">{t.slice(2, -2)}</strong>);
+    else if (t.startsWith("`")) out.push(<code key={k++} className="rounded-md bg-white/8 px-1.5 py-0.5 font-mono text-[12px]">{t.slice(1, -1)}</code>);
     else out.push(<em key={k++}>{t.slice(1, -1)}</em>);
     last = m.index + t.length;
   }
@@ -52,7 +52,7 @@ export function Markdown({ text }: { text: string }) {
     const h = /^(#{1,4})\s+(.*)/.exec(line);
     if (h) {
       blocks.push(
-        <p key={blocks.length} className="font-semibold text-text">
+        <p key={blocks.length} className="pt-1 font-semibold text-foreground">
           {inline(h[2])}
         </p>,
       );
@@ -61,5 +61,5 @@ export function Markdown({ text }: { text: string }) {
     }
   }
   flush();
-  return <div className="space-y-2 text-sm leading-relaxed text-text/90">{blocks.map((b, i) => <Fragment key={i}>{b}</Fragment>)}</div>;
+  return <div className="space-y-2 text-sm leading-relaxed text-foreground/85 [&_li]:marker:text-muted-foreground">{blocks.map((b, i) => <Fragment key={i}>{b}</Fragment>)}</div>;
 }

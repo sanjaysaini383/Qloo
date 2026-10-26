@@ -4,8 +4,12 @@ import L from "leaflet";
 import { CircleMarker, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
 import type { Board } from "@/lib/types";
 
-const pin = (n: number) =>
-  L.divIcon({ className: "", html: `<div class="stop-pin">${n}</div>`, iconSize: [28, 28], iconAnchor: [14, 14] });
+const AMBER = "#f6b649";
+const INDIGO = "#818cf8";
+const TEAL = "#2dd4bf";
+
+const pin = (n: number, active: boolean) =>
+  L.divIcon({ className: "", html: `<div class="stop-pin${active ? " is-active" : ""}">${n}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
 
 function Fit({ points, maxZoom }: { points: [number, number][]; maxZoom: number }) {
   const map = useMap();
@@ -37,6 +41,8 @@ export default function TourMap({ board, focusCity }: { board: Board; focusCity?
       center={[39, -96]}
       zoom={3}
       scrollWheelZoom={false}
+      // On phones one finger scrolls the page; pinch still pans and zooms the map.
+      dragging={!L.Browser.mobile}
       className="h-full w-full"
       worldCopyJump
       attributionControl
@@ -68,7 +74,7 @@ export default function TourMap({ board, focusCity }: { board: Board; focusCity?
           key={m.city}
           center={[m.lat, m.lng]}
           radius={4 + 14 * (m.affinity / maxAff)}
-          pathOptions={{ color: "#ff5c8a", weight: 1, fillColor: "#ff5c8a", fillOpacity: 0.12 + 0.35 * (m.affinity / maxAff) }}
+          pathOptions={{ color: INDIGO, weight: 1, opacity: 0.7, fillColor: INDIGO, fillOpacity: 0.1 + 0.32 * (m.affinity / maxAff) }}
         >
           <Tooltip>
             {m.city}: fan affinity {(m.affinity * 100).toFixed(0)}
@@ -76,10 +82,15 @@ export default function TourMap({ board, focusCity }: { board: Board; focusCity?
         </CircleMarker>
       ))}
 
-      {route.length > 1 && <Polyline positions={route} pathOptions={{ color: "#ffb547", weight: 3, dashArray: "6 8" }} />}
+      {route.length > 1 && (
+        <>
+          <Polyline positions={route} pathOptions={{ color: AMBER, weight: 10, opacity: 0.12, lineCap: "round" }} />
+          <Polyline positions={route} pathOptions={{ color: AMBER, weight: 2.5, opacity: 0.95, dashArray: "2 7", lineCap: "round" }} />
+        </>
+      )}
 
       {stops.map((s) => (
-        <Marker key={s.city} position={[s.lat, s.lng]} icon={pin(s.order)}>
+        <Marker key={s.city} position={[s.lat, s.lng]} icon={pin(s.order, s.city === focusCity)}>
           <Popup>
             <strong>
               {s.order}. {s.city}
@@ -97,7 +108,7 @@ export default function TourMap({ board, focusCity }: { board: Board; focusCity?
       ))}
 
       {scout?.hotspots.map((h, i) => {
-        const style = { color: "#ffb547", weight: 1, fillColor: "#ffb547", fillOpacity: 0.08 + 0.4 * h.affinity };
+        const style = { color: AMBER, weight: 1, fillColor: AMBER, fillOpacity: 0.08 + 0.4 * h.affinity };
         const tip = (
           <Tooltip sticky>
             {h.name ?? "Fan hotspot"} · fan affinity {(h.affinity * 100).toFixed(0)}
@@ -122,7 +133,7 @@ export default function TourMap({ board, focusCity }: { board: Board; focusCity?
               key={v.id}
               center={[v.lat!, v.lng!]}
               radius={5}
-              pathOptions={{ color: isVenue ? "#3ad6c5" : "#ececf3", weight: 2, fillOpacity: 0.9, fillColor: isVenue ? "#3ad6c5" : "#13131b" }}
+              pathOptions={{ color: isVenue ? TEAL : "#ececf1", weight: 2, fillOpacity: 0.9, fillColor: isVenue ? TEAL : "#0d0f17" }}
             >
               <Tooltip>
                 {isVenue ? "Venue" : "Local spot"}: {v.name}

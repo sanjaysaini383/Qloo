@@ -175,62 +175,122 @@ body {
 
 /* ---- legacy component classes (removed as components move to the glass theme) ---- */
 
-.stage-glow {
-  background: transparent;
-}
-
 .ticket {
   background: rgb(255 255 255 / 0.03);
   border: 1px solid rgb(255 255 255 / 0.08);
 }
+
+/* ---- Leaflet, restyled to match the glass layers ---- */
 
 .leaflet-container {
   background: #0b0d14;
   font-family: var(--font-sans);
 }
 
+.leaflet-bar {
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.1) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 12px 30px -12px rgb(0 0 0 / 0.7) !important;
+}
+
+.leaflet-bar a,
+.leaflet-touch .leaflet-bar a {
+  width: 32px;
+  height: 32px;
+  line-height: 31px;
+  font-weight: 400;
+  color: var(--color-foreground) !important;
+  background: rgb(13 15 23 / 0.82) !important;
+  border-bottom-color: rgb(255 255 255 / 0.08) !important;
+  backdrop-filter: blur(16px);
+  transition: background-color 0.15s;
+}
+
+.leaflet-bar a:hover {
+  background: rgb(32 35 48 / 0.92) !important;
+}
+
+.leaflet-bar a.leaflet-disabled {
+  color: var(--color-muted-foreground) !important;
+  opacity: 0.5;
+}
+
 .leaflet-popup-content-wrapper,
-.leaflet-popup-tip {
-  background: var(--color-panel-2);
-  color: var(--color-text);
-  border: 1px solid var(--color-line);
+.leaflet-popup-tip,
+.leaflet-tooltip {
+  background: rgb(13 15 23 / 0.92);
+  color: var(--color-foreground);
+  box-shadow: 0 12px 30px -10px rgb(0 0 0 / 0.7);
+}
+
+.leaflet-popup-content-wrapper {
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 12px;
+}
+
+.leaflet-popup-content {
+  margin: 10px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--color-muted-foreground);
+}
+
+.leaflet-tooltip {
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.leaflet-tooltip-top::before {
+  border-top-color: rgb(13 15 23 / 0.92);
+}
+.leaflet-tooltip-bottom::before {
+  border-bottom-color: rgb(13 15 23 / 0.92);
+}
+.leaflet-tooltip-left::before {
+  border-left-color: rgb(13 15 23 / 0.92);
+}
+.leaflet-tooltip-right::before {
+  border-right-color: rgb(13 15 23 / 0.92);
 }
 
 .leaflet-control-attribution {
-  background: rgba(7, 8, 13, 0.7) !important;
-  color: var(--color-muted) !important;
+  padding: 1px 6px !important;
+  font-size: 10px;
+  color: var(--color-muted-foreground) !important;
+  background: rgb(7 8 13 / 0.6) !important;
+  border-top-left-radius: 8px;
 }
 
 .leaflet-control-attribution a {
-  color: var(--color-muted) !important;
+  color: inherit !important;
 }
 
 .stop-pin {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 9999px;
-  background: var(--color-amber);
-  color: var(--color-ink);
-  font-weight: 800;
-  font-size: 13px;
-  border: 2px solid var(--color-ink);
-  box-shadow: 0 0 0 3px rgba(246, 182, 73, 0.35);
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  font: 700 12px/1 var(--font-sans);
+  border: 2px solid #0b0d14;
+  box-shadow:
+    0 0 0 1.5px rgb(246 182 73 / 0.6),
+    0 6px 16px -4px rgb(246 182 73 / 0.55);
 }
 
-@keyframes pulse-dot {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
-}
-
-.pulse-dot {
-  animation: pulse-dot 1.2s ease-in-out infinite;
+.stop-pin.is-active {
+  transform: scale(1.25);
+  box-shadow:
+    0 0 0 4px rgb(246 182 73 / 0.3),
+    0 8px 22px -4px rgb(246 182 73 / 0.75);
 }
 
 .print-only {
