@@ -44,6 +44,8 @@ export default function RoadieApp() {
   const [focus, setFocus] = useState<string | undefined>();
   const [env, setEnv] = useState<{ qloo: string; llm: string | null } | null>(null);
   const [agentOpen, setAgentOpen] = useState(false);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const { start } = r;
   const autoStarted = useRef(false);
@@ -73,6 +75,14 @@ export default function RoadieApp() {
     mq.addEventListener("change", close);
     return () => mq.removeEventListener("change", close);
   }, []);
+
+  // Each tab opens at its top: the panel scrolls on desktop, the page scrolls on phones.
+  const changeTab = (t: Tab) => {
+    setTab(t);
+    panelRef.current?.scrollTo({ top: 0 });
+    const top = tabsRef.current?.getBoundingClientRect().top ?? 0;
+    if (top < 56) window.scrollBy({ top: top - 68 });
+  };
 
   const focusCity = (city?: string) => {
     setFocus(city);
@@ -218,7 +228,7 @@ export default function RoadieApp() {
               </div>
             </section>
 
-            <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="glass min-h-0 flex-1 rounded-2xl lg:overflow-hidden">
+            <Tabs ref={tabsRef} value={tab} onValueChange={(v) => changeTab(v as Tab)} className="glass min-h-0 flex-1 rounded-2xl lg:overflow-hidden">
               <div className="sticky top-14 z-30 rounded-t-2xl border-b border-white/6 bg-[#0c0e15]/95 px-2 py-2 backdrop-blur-xl sm:px-3 lg:static lg:bg-transparent lg:backdrop-blur-none">
                 <TabsList className="no-scrollbar flex w-full justify-start overflow-x-auto sm:inline-flex sm:w-auto">
                   {TABS.map((t) => (
@@ -238,7 +248,7 @@ export default function RoadieApp() {
                   ))}
                 </TabsList>
               </div>
-              <div className="scroll-thin min-h-0 flex-1 p-4 sm:p-5 lg:overflow-y-auto">
+              <div ref={panelRef} className="scroll-thin min-h-0 flex-1 p-4 sm:p-5 lg:overflow-y-auto">
                 {TABS.map((t) => (
                   <TabsContent key={t} value={t}>
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }}>

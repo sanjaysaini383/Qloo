@@ -29,6 +29,18 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 
 const pct = (n?: number) => (n === undefined ? "–" : `${Math.round(n * 100)}`);
 
+/** Second line for an entity: its address, a disambiguation that adds something, or its top tags. */
+const detail = (e: Entity) => {
+  const d = e.disambiguation?.trim();
+  // Some Qloo tags are bare numbers ("4", "30 34"); they read as noise.
+  const tags = e.tags
+    .filter((t) => /[a-z]/i.test(t.name))
+    .slice(0, 2)
+    .map((t) => t.name)
+    .join(" · ");
+  return e.address ?? (d && d.toLowerCase() !== e.name.toLowerCase() ? d : undefined) ?? (tags || undefined);
+};
+
 const day = (iso: string, opts: Intl.DateTimeFormatOptions) =>
   new Date(`${iso}T12:00:00Z`).toLocaleDateString("en", { ...opts, timeZone: "UTC" });
 
@@ -255,9 +267,9 @@ function StopCard({
 
           {(s.venue || s.opener || s.hangout) && (
             <div className="mt-4 grid gap-3 border-t border-white/6 pt-4 sm:grid-cols-3">
-              {s.venue && <Pick icon={Ticket} tone="venue" kind="Venue" e={s.venue} sub={s.venue.address ?? s.venue.disambiguation} />}
-              {s.opener && <Pick icon={Users} tone="opener" kind="Support act" e={s.opener} sub={s.opener.disambiguation ?? s.opener.tags.slice(0, 2).map((t) => t.name).join(" · ")} />}
-              {s.hangout && <Pick icon={Coffee} tone="spot" kind="Local spot" e={s.hangout} sub={s.hangout.address ?? s.hangout.tags[0]?.name} />}
+              {s.venue && <Pick icon={Ticket} tone="venue" kind="Venue" e={s.venue} sub={detail(s.venue)} />}
+              {s.opener && <Pick icon={Users} tone="opener" kind="Support act" e={s.opener} sub={detail(s.opener)} />}
+              {s.hangout && <Pick icon={Coffee} tone="spot" kind="Local spot" e={s.hangout} sub={detail(s.hangout)} />}
             </div>
           )}
         </div>
@@ -291,10 +303,10 @@ function StopCard({
               <div>
                 <SectionLabel>Where fans hang out</SectionLabel>
                 <ul className="mt-2.5 space-y-2">
-                  {scout.hangouts.slice(0, 5).map((v) => (
-                    <li key={v.id} className="flex min-w-0 items-baseline justify-between gap-3 text-sm">
-                      <span className="truncate">{v.name}</span>
-                      {v.tags[0] && <span className="shrink-0 text-xs text-muted-foreground capitalize">{v.tags[0].name}</span>}
+                  {scout.hangouts.slice(0, 4).map((v) => (
+                    <li key={v.id} className="min-w-0 text-sm">
+                      <div className="truncate">{v.name}</div>
+                      {v.address && <div className="truncate text-xs text-muted-foreground">{v.address}</div>}
                     </li>
                   ))}
                 </ul>
@@ -451,7 +463,7 @@ function RankedList({ title, items, hint, icon }: { title: string; items: Entity
       <ol className="-mx-2 space-y-0.5">
         {items.slice(0, 8).map((e, i) => {
           const overlap = (e as { overlap?: string[] }).overlap;
-          const sub = overlap?.length ? `Shared taste: ${overlap.join(", ")}` : (e.address ?? e.disambiguation ?? e.tags.slice(0, 2).map((t) => t.name).join(" · "));
+          const sub = overlap?.length ? `Shared taste: ${overlap.join(", ")}` : detail(e);
           return (
             <li key={e.id} className="flex items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-white/4">
               <span className="w-4 shrink-0 text-right text-xs font-medium text-muted-foreground tabular-nums">{i + 1}</span>
