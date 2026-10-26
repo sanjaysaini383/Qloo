@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 !.env.example
+
+# local demo video and submission uploads (thumbnails, descriptions)
+*.mp4
+/submission/
