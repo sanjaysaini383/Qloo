@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { demographicsFrom, entitiesFrom, heatmapFrom, tagsFrom } from "../src/lib/qloo/normalize.ts";
+import { affinityOf, demographicsFrom, entitiesFrom, heatmapFrom, tagsFrom, wktRing } from "../src/lib/qloo/normalize.ts";
 
 // Shapes below follow the examples in Qloo's API reference.
 
@@ -89,4 +89,35 @@ test("neighbourhoods: drop admin areas, far points and huge regions; keep names"
   assert.deepEqual(hoods.map((h) => h.name), ["Logan Square", "Wicker Park"]);
   assert.ok(hoods[0].polygon && hoods[0].polygon.length >= 4);
   assert.equal(hoods[1].polygon, undefined);
+});
+
+test("wktRing reads points, polygons and the first ring of a multipolygon", () => {
+  assert.deepEqual(wktRing("POINT(-87.65 41.92)"), [[-87.65, 41.92]]);
+  assert.deepEqual(wktRing("POLYGON((-87.7 41.9, -87.6 41.9, -87.6 42, -87.7 41.9))"), [
+    [-87.7, 41.9],
+    [-87.6, 41.9],
+    [-87.6, 42],
+    [-87.7, 41.9],
+  ]);
+  assert.deepEqual(wktRing("MULTIPOLYGON(((1 2, 3 4, 5 6, 1 2)),((10 20, 30 40, 50 60, 10 20)))"), [
+    [1, 2],
+    [3, 4],
+    [5, 6],
+    [1, 2],
+  ]);
+});
+
+test("wktRing returns nothing for empty or truncated geometry", () => {
+  assert.deepEqual(wktRing(""), []);
+  assert.deepEqual(wktRing("POLYGON EMPTY"), []);
+  assert.deepEqual(wktRing("POLYGON((1 2, 3 4"), []);
+});
+
+test("affinityOf prefers the query affinity and skips values that aren't numbers", () => {
+  assert.equal(affinityOf({ query: { affinity: 0.9, score: 0.1 }, affinity: 0.5 }), 0.9);
+  assert.equal(affinityOf({ query: { affinity_rank: 0.7 } }), 0.7);
+  assert.equal(affinityOf({ query: { affinity: "0.9" }, affinity: 0.5 }), 0.5);
+  assert.equal(affinityOf({ query: { affinity: Number.NaN, score: 0.3 } }), 0.3);
+  assert.equal(affinityOf({}), undefined);
+  assert.equal(affinityOf(null), undefined);
 });
