@@ -219,7 +219,7 @@ export default function RoadieApp() {
             </section>
 
             <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="glass min-h-0 flex-1 rounded-2xl lg:overflow-hidden">
-              <div className="sticky top-14 z-30 rounded-t-2xl border-b border-white/6 bg-background/75 px-2 py-2 backdrop-blur-xl sm:px-3 lg:static lg:bg-transparent lg:backdrop-blur-none">
+              <div className="sticky top-14 z-30 rounded-t-2xl border-b border-white/6 bg-[#0c0e15]/95 px-2 py-2 backdrop-blur-xl sm:px-3 lg:static lg:bg-transparent lg:backdrop-blur-none">
                 <TabsList className="no-scrollbar flex w-full justify-start overflow-x-auto sm:inline-flex sm:w-auto">
                   {TABS.map((t) => (
                     <TabsTrigger key={t} value={t}>
@@ -286,7 +286,7 @@ export default function RoadieApp() {
         </Sheet>
 
         <div className="print-only space-y-6 p-6">
-          <h1 className="font-display text-3xl">{brief.actName}: tour sheet</h1>
+          <h1 className="font-serif text-4xl">{brief.actName}: tour sheet</h1>
           <Itinerary board={r.board} onFocus={() => {}} />
           <Partners board={r.board} />
           <Audience board={r.board} />

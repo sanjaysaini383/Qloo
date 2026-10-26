@@ -21,17 +21,8 @@
   --color-input: rgb(255 255 255 / 0.1);
   --color-ring: rgb(246 182 73 / 0.55);
 
-  /* Legacy names, kept until every component has moved to the tokens above. */
-  --color-ink: #07080d;
-  --color-panel: #0f1118;
-  --color-panel-2: #161925;
-  --color-line: rgb(255 255 255 / 0.1);
-  --color-muted: #8f93a3;
-  --color-text: #ececf1;
-  --color-amber: #f6b649;
-  --color-pink: #fb7185;
-  --color-teal: #2dd4bf;
-  --font-display: var(--font-instrument), ui-serif, Georgia, serif;
+  /* shadcn/ui's muted surface; text uses muted-foreground. */
+  --color-muted: rgb(255 255 255 / 0.05);
 
   --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
   --font-serif: var(--font-instrument), ui-serif, Georgia, serif;
@@ -173,13 +164,6 @@ body {
   }
 }
 
-/* ---- legacy component classes (removed as components move to the glass theme) ---- */
-
-.ticket {
-  background: rgb(255 255 255 / 0.03);
-  border: 1px solid rgb(255 255 255 / 0.08);
-}
-
 /* ---- Leaflet, restyled to match the glass layers ---- */
 
 .leaflet-container {
@@ -297,33 +281,33 @@ body {
   display: none;
 }
 
+/* Tour sheet: flip to ink on paper and drop the glass effects. */
 @media print {
   :root {
-    --color-ink: #ffffff;
-    --color-panel: #ffffff;
-    --color-panel-2: #f4f4f6;
-    --color-line: #d4d4dc;
-    --color-text: #111118;
-    --color-muted: #55556a;
-    --color-amber: #b86e00;
-  }
-  .print-only {
-    display: block;
-  }
-  .ticket {
-    break-inside: avoid;
-  }
-  .no-print,
-  .ambient {
-    display: none !important;
+    --color-background: #ffffff;
+    --color-foreground: #111118;
+    --color-muted-foreground: #55556a;
+    --color-primary: #a35f00;
+    --color-primary-foreground: #ffffff;
   }
   html,
   body {
     background: #fff;
     color: #111;
   }
-  .ticket {
-    background: #fff;
-    border-color: #ccc;
+  .print-only {
+    display: block;
+  }
+  .no-print,
+  .ambient {
+    display: none !important;
+  }
+  .glass,
+  .glass-strong,
+  .surface {
+    background: #fff !important;
+    border-color: #d4d4dc !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
   }
 }
