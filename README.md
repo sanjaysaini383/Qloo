@@ -7,6 +7,12 @@
 
 Built for the [Qloo Agentic Hackathon](https://qloo.devpost.com/) (Sep 30 – Oct 30, 2026). All code was written during the submission period.
 
+![Roadie planning a 7-city Big Thief tour: the agent's steps on the left, the routed tour and the plan on the right](docs/screenshots/tour.jpg)
+
+| City drill-down: fan neighbourhoods, venues and local spots | The same workspace on a phone |
+| --- | --- |
+| ![Boston, with the neighbourhoods where fans cluster outlined on the map](docs/screenshots/city.jpg) | ![Three phone screens: the landing page, the tour map and the agent chat](docs/screenshots/mobile.jpg) |
+
 ---
 
 ## The problem
@@ -42,11 +48,12 @@ Without Qloo, Roadie has nothing to stand on. Every number and name on the scree
 
 ## Product tour
 
-- **Landing:** brief form with Qloo-backed act autocomplete, "sounds like" references, region (North America, UK & Europe, India, Australia & NZ, Latin America), number of shows, start date, home city and notes.
-- **Agent activity:** live stream of the agent's reasoning summaries, tool calls and its reply as it's written.
+- **Landing:** brief form with Qloo-backed act autocomplete, "sounds like" references, region (North America, UK & Europe, India, Australia & NZ, Latin America), number of shows, start date, home city and notes, or one of four ready-made examples.
+- **Agent activity:** a step-by-step timeline of the agent's tool calls, its reasoning summaries, and its reply as it's written. On phones it opens as a bottom sheet.
 - **Map:** every scanned market sized by fan index, the routed tour, and, when you open a stop, the outlined fan neighbourhoods, venues and local spots in that city.
-- **Tabs:** Tour (ticket-stub itinerary with per-stop actions such as "Draft booking pitch"), Audience, Partners, Market scan (with raw Qloo affinities), Receipts.
+- **Tabs:** Tour (a card per stop with date, travel, fan index, where fans cluster, venue, support act and local spot, plus one-tap actions such as "Draft booking pitch"), Audience, Partners, Market scan (with raw Qloo affinities), Receipts.
 - **Tour sheet:** print or save as a PDF to send to a band, manager or promoter.
+- **Design:** a dark glass interface built from shadcn/ui-style components on Radix UI, animated with Framer Motion, and laid out for everything from phones to wide screens.
 
 ## Architecture
 
@@ -68,6 +75,7 @@ flowchart LR
 - `src/lib/agent/runner.ts`: the **Gemini** streaming function-calling loop that runs the live demo (thought summaries in the activity feed, parallel tool calls, automatic switch to a fallback model when one is overloaded or out of quota), an equivalent Claude loop for teams with an Anthropic key, and **Autopilot**, a deterministic planner that runs the same tools when no LLM is configured or the LLM fails.
 - `src/lib/routing.ts`: exact open-path TSP (Held-Karp) and scheduling.
 - `src/app/api/plan/route.ts`: zod-validated, rate-limited NDJSON streaming endpoint.
+- `src/components/ui/`: shadcn/ui-style building blocks (button, tabs, select, sheet, tooltip and more) on Radix UI. The glass theme and its tokens live in `src/app/globals.css`.
 
 ### How the fan index works
 
