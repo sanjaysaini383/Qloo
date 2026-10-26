@@ -37,7 +37,9 @@ export default function RoadieApp() {
     if (autoStarted.current) return;
     autoStarted.current = true;
     // Deep link: /?try=0 runs a preset immediately (handy for judges and demos).
-    const n = Number(new URLSearchParams(window.location.search).get("try"));
+    // Number(null) is 0, so a missing param must be ruled out first or every visit runs preset 0.
+    const raw = new URLSearchParams(window.location.search).get("try");
+    const n = raw === null || raw === "" ? NaN : Number(raw);
     const preset = Number.isInteger(n) ? PRESETS[n] : undefined;
     if (!preset) return;
     start({ ...preset.brief, startDate: nextMonthStart() });
